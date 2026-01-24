@@ -155,7 +155,7 @@ class Phase2EventHandler:
 
                 # Transcribe with Deepgram
                 try:
-                    transcription = await self.stt_service.transcribe(audio_to_transcribe)
+                    transcription = await self.stt_service.transcribe_audio(audio_to_transcribe, call_sid)
 
                     if transcription and transcription.strip():
                         logger.info("=" * 80)
