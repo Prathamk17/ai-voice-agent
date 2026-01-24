@@ -187,7 +187,15 @@ async def root():
         dict: Service information
     """
     import os
-    test_mode = os.getenv("EXOTEL_TEST_MODE", "true").lower() == "true"
+    test_mode = os.getenv("EXOTEL_TEST_MODE", "true").lower()
+
+    # Determine mode message
+    if test_mode in ("phase1", "true"):
+        mode_message = "🧪 Phase 1: WebSocket testing (no AI services)"
+    elif test_mode == "phase2":
+        mode_message = "🎤 Phase 2: Deepgram STT testing (speech-to-text only)"
+    else:
+        mode_message = "🚀 Production mode (all services enabled)"
 
     return {
         "service": settings.APP_NAME,
@@ -196,7 +204,7 @@ async def root():
         "version": "1.0.0",
         "test_mode": test_mode,
         "websocket_endpoint": f"{settings.OUR_BASE_URL}{settings.WEBSOCKET_ENDPOINT_PATH}",
-        "message": "🧪 Exotel WebSocket testing mode (no AI services)" if test_mode else "🚀 Production mode"
+        "message": mode_message
     }
 
 

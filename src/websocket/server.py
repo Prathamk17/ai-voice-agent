@@ -10,16 +10,19 @@ import json
 
 from fastapi import WebSocket, WebSocketDisconnect
 from src.websocket.event_handlers import ExotelEventHandler
-from src.websocket.test_event_handlers import TestExotelEventHandler  # TEST MODE
+from src.websocket.test_event_handlers import TestExotelEventHandler  # Phase 1
+from src.websocket.phase2_event_handlers import Phase2EventHandler  # Phase 2
 from src.websocket.session_manager import SessionManager
 from src.utils.logger import StructuredLogger
 import os
 
 logger = StructuredLogger(__name__)
 
-# TEST MODE: Set to True to use minimal test handlers (no AI services)
-# Set to False to use production handlers (with Deepgram, OpenAI, ElevenLabs)
-TEST_MODE = os.getenv("EXOTEL_TEST_MODE", "true").lower() == "true"
+# TEST MODE Configuration:
+# - "phase1" or "true": Minimal test (no AI services)
+# - "phase2": Deepgram STT only (no OpenAI, no ElevenLabs)
+# - "false": Production mode (all services enabled)
+TEST_MODE = os.getenv("EXOTEL_TEST_MODE", "true").lower()
 
 
 class ExotelWebSocketServer:
@@ -34,13 +37,16 @@ class ExotelWebSocketServer:
     """
 
     def __init__(self):
-        # Use test handler in test mode, production handler otherwise
-        if TEST_MODE:
+        # Select handler based on test mode
+        if TEST_MODE in ("phase1", "true"):
             self.event_handler = TestExotelEventHandler()
-            logger.info("🧪 WebSocket server initialized in TEST MODE (no AI services)")
+            logger.info("🧪 WebSocket server initialized in PHASE 1 MODE (no AI services)")
+        elif TEST_MODE == "phase2":
+            self.event_handler = Phase2EventHandler()
+            logger.info("🎤 WebSocket server initialized in PHASE 2 MODE (Deepgram STT only)")
         else:
             self.event_handler = ExotelEventHandler()
-            logger.info("🚀 WebSocket server initialized in PRODUCTION MODE")
+            logger.info("🚀 WebSocket server initialized in PRODUCTION MODE (all services)")
 
         self.session_manager = SessionManager()
         self.active_connections: Dict[str, WebSocket] = {}
