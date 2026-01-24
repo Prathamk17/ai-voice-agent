@@ -30,7 +30,13 @@ class CampaignWorker:
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
 
-        # Create separate DB engine for background tasks
+        # Create separate DB engine for background tasks (only if DATABASE_URL is configured)
+        if not settings.DATABASE_URL:
+            logger.warning("DATABASE_URL not configured - campaign worker disabled")
+            self.engine = None
+            self.async_session_maker = None
+            return
+
         self.engine = create_async_engine(
             settings.DATABASE_URL,
             pool_size=5,
@@ -103,6 +109,10 @@ class CampaignWorker:
 
     def start(self):
         """Start the background worker"""
+        if not self.engine:
+            logger.warning("Campaign worker not started - DATABASE_URL not configured")
+            return
+
         logger.info("Starting campaign worker")
 
         # Schedule the job to run every 30 seconds
@@ -119,6 +129,9 @@ class CampaignWorker:
 
     def stop(self):
         """Stop the background worker"""
+        if not self.engine:
+            return
+
         logger.info("Stopping campaign worker")
         self.scheduler.shutdown()
 
