@@ -4,6 +4,7 @@ All environment variables are loaded and validated here.
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 
 
@@ -24,6 +25,14 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     # Format: postgresql+asyncpg://user:password@localhost:5432/voiceai
     # Optional for deployment testing - add PostgreSQL service in Railway for production
+
+    @field_validator('DATABASE_URL')
+    @classmethod
+    def convert_postgres_url_to_asyncpg(cls, v: Optional[str]) -> Optional[str]:
+        """Convert postgresql:// to postgresql+asyncpg:// for async support"""
+        if v and v.startswith('postgresql://'):
+            return v.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        return v
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
