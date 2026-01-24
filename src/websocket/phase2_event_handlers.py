@@ -35,6 +35,10 @@ class Phase2EventHandler:
         self.stt_service = DeepgramSTTService()
         self.audio_processor = AudioProcessor()
 
+        # Track audio buffers per call_sid (can't store on session due to Redis serialization)
+        self.audio_buffers = {}  # {call_sid: bytearray()}
+        self.chunk_counters = {}  # {call_sid: int}
+
     async def handle_connected(
         self,
         websocket,
@@ -86,6 +90,10 @@ class Phase2EventHandler:
         logger.info("   📢 Ready to transcribe your speech!")
         logger.info("   💬 Try saying: 'Hello, can you hear me?'")
 
+        # Initialize audio buffer for this call
+        self.audio_buffers[call_sid] = bytearray()
+        self.chunk_counters[call_sid] = 0
+
         # Send a simple test greeting tone
         await self.send_test_greeting(websocket, call_sid)
 
@@ -114,33 +122,36 @@ class Phase2EventHandler:
             # Decode base64 audio
             audio_bytes = base64.b64decode(payload)
 
-            # Add to session's audio buffer
-            if not hasattr(session, 'audio_buffer'):
-                session.audio_buffer = bytearray()
-                session.silence_count = 0
-                session.received_chunks = 0
+            # Get or initialize buffers for this call
+            call_sid = session.call_sid
+            if call_sid not in self.audio_buffers:
+                self.audio_buffers[call_sid] = bytearray()
+                self.chunk_counters[call_sid] = 0
 
-            session.audio_buffer.extend(audio_bytes)
-            session.received_chunks += 1
+            # Add to audio buffer
+            self.audio_buffers[call_sid].extend(audio_bytes)
+            self.chunk_counters[call_sid] += 1
+
+            chunk_count = self.chunk_counters[call_sid]
 
             # Log progress every 50 chunks (about 1 second)
-            if session.received_chunks % 50 == 1:
-                buffer_size_kb = len(session.audio_buffer) / 1024
+            if chunk_count % 50 == 1:
+                buffer_size_kb = len(self.audio_buffers[call_sid]) / 1024
                 logger.info(
-                    f"📊 PHASE 2: Collecting audio... {session.received_chunks} chunks ({buffer_size_kb:.1f} KB)"
+                    f"📊 PHASE 2: Collecting audio... {chunk_count} chunks ({buffer_size_kb:.1f} KB)"
                 )
 
             # Simple silence detection: check if we have enough audio
             # In a real implementation, we'd analyze the audio amplitude
             # For now, we'll transcribe every ~2 seconds of audio (100 chunks)
-            if session.received_chunks % 100 == 0 and len(session.audio_buffer) > 0:
-                logger.info(f"🎤 PHASE 2: Attempting transcription after {session.received_chunks} chunks...")
+            if chunk_count % 100 == 0 and len(self.audio_buffers[call_sid]) > 0:
+                logger.info(f"🎤 PHASE 2: Attempting transcription after {chunk_count} chunks...")
 
                 # Get audio from buffer
-                audio_to_transcribe = bytes(session.audio_buffer)
+                audio_to_transcribe = bytes(self.audio_buffers[call_sid])
 
                 # Clear buffer for next segment
-                session.audio_buffer = bytearray()
+                self.audio_buffers[call_sid] = bytearray()
 
                 # Transcribe with Deepgram
                 try:
@@ -182,6 +193,8 @@ class Phase2EventHandler:
         logger.info("✅ PHASE 2: Call STOPPED")
         logger.info(f"   Call SID: {session.call_sid}")
 
+        call_sid = session.call_sid
+
         # Get final transcript
         transcript = session.transcript if hasattr(session, 'transcript') else []
 
@@ -197,8 +210,13 @@ class Phase2EventHandler:
         else:
             logger.info("   ℹ️ No transcriptions captured during this call")
 
-        if hasattr(session, 'received_chunks'):
-            logger.info(f"   Total audio chunks received: {session.received_chunks}")
+        # Log total chunks received
+        if call_sid in self.chunk_counters:
+            logger.info(f"   Total audio chunks received: {self.chunk_counters[call_sid]}")
+
+            # Cleanup buffers
+            del self.audio_buffers[call_sid]
+            del self.chunk_counters[call_sid]
 
     async def handle_clear(
         self,
