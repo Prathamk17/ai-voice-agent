@@ -1,0 +1,606 @@
+================================================================================
+                    EXOTEL INTEGRATION - ARCHITECTURE OVERVIEW
+================================================================================
+
+COMPONENT DIAGRAM
+================================================================================
+
+                            Your Application
+    ┌──────────────────────────────────────────────────────────────┐
+    │                                                              │
+    │  ┌─────────────────────────────────────────────────────────┐ │
+    │  │  FastAPI Application (src/main.py)                      │ │
+    │  │                                                         │ │
+    │  │  @app.websocket("/media")                              │ │
+    │  │  websocket_server = ExotelWebSocketServer()            │ │
+    │  └──────────────────────┬──────────────────────────────────┘ │
+    │                         │                                    │
+    │                         ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────┐ │
+    │  │  ExotelWebSocketServer (src/websocket/server.py)        │ │
+    │  │  ├─ handle_connection()                                 │ │
+    │  │  ├─ send_message()                                      │ │
+    │  │  └─ disconnect()                                        │ │
+    │  └──────────────────┬──────────────────┬───────────────────┘ │
+    │                     │                  │                     │
+    │      ┌──────────────▼───────┐   ┌──────▼──────────────┐     │
+    │      │                      │   │                     │     │
+    │      ▼                      ▼   ▼                     │     │
+    │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
+    │  │  ExotelEvent │   │  SessionMgr  │   │    Redis     │   │
+    │  │  Handler     │   │              │   │              │   │
+    │  │              │   │              │   │ session:{sid}│   │
+    │  │ handle_start │   │ create_sess  │   │              │   │
+    │  │ handle_media │   │ save_sess    │   │ ConversSession   │
+    │  │ handle_stop  │   │ add_to_trans │   │ + Audio buffer   │
+    │  └──────┬───────┘   │ get_session  │   │ + Transcript     │
+    │         │           └──────────────┘   └──────────────┘   │
+    │         │                                                  │
+    │    ┌────┴───────────────────┬─────────────────┐            │
+    │    │                        │                 │            │
+    │    ▼                        ▼                 ▼            │
+    │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
+    │  │ AudioProc    │   │ STT Service  │   │ TTS Service  │  │
+    │  │              │   │ (Deepgram)   │   │ (ElevenLabs) │  │
+    │  │ decode_exo   │   │              │   │              │  │
+    │  │ encode_for   │   │ transcribe_  │   │ generate_    │  │
+    │  │ chunk_audio  │   │ audio()      │   │ speech()     │  │
+    │  └──────────────┘   └──────────────┘   └──────────────┘  │
+    │                                                            │
+    │    ┌────────────────────────────────────────────┐         │
+    │    │                                            │         │
+    │    ▼                                            ▼         │
+    │  ┌──────────────────┐            ┌──────────────────┐    │
+    │  │  ExotelClient    │            │  ConvEngine      │    │
+    │  │  (REST API)      │            │  (LLM)           │    │
+    │  │                  │            │  (OpenAI)        │    │
+    │  │ make_call()      │            │                  │    │
+    │  │ get_call_details │            │ process_input()  │    │
+    │  └────────┬─────────┘            │ generate_intro() │    │
+    │           │                      └──────┬───────────┘    │
+    │           │                             │                │
+    │           │              ┌──────────────┴─────────┐      │
+    │           │              │                       │      │
+    │           ▼              ▼                       ▼      │
+    │  ┌─────────────────┐                 ┌──────────────────┐ │
+    │  │   CallSession   │                 │   PostgreSQL DB  │ │
+    │  │   (DB ORM)      │                 │                  │ │
+    │  │                 │                 │ Leads            │ │
+    │  │ status          │                 │ CallSessions     │ │
+    │  │ transcript      │                 │ Campaigns        │ │
+    │  │ recording_url   │                 │ ScheduledCalls   │ │
+    │  └─────────────────┘                 └──────────────────┘ │
+    │                                                            │
+    └────────────────────────────────────────────────────────────┘
+           │                                              △
+           │                                              │
+           └──────────────┬──────────────────────────────┘
+                         │
+                         │ HTTPS
+                         │ REST API + WebSocket
+                         │
+                         ▼
+    ┌──────────────────────────────────────────────────────────────┐
+    │                  Exotel Telephony Platform                  │
+    │                 (Carrier for Indian Numbers)                │
+    │                                                              │
+    │  ┌────────────────────────────────────────────────────────┐ │
+    │  │ Exophone (Virtual Number)                             │ │
+    │  │  080XXXXXXXX                                          │ │
+    │  └─────────────────────┬────────────────────────────────┘ │
+    │                        │                                  │
+    │                        ▼                                  │
+    │  ┌────────────────────────────────────────────────────────┐ │
+    │  │ Exophlo (Call Flow) with Voicebot Applet             │ │
+    │  │                                                       │ │
+    │  │ When customer answers:                              │ │
+    │  │ 1. Exophlo triggers                                 │ │
+    │  │ 2. Voicebot opens WebSocket to /media              │ │
+    │  │ 3. Starts streaming audio events                   │ │
+    │  │ 4. Connected → Start → Media (loop) → Stop        │ │
+    │  └─────────────────────┬────────────────────────────────┘ │
+    │                        │                                  │
+    │                        ▼                                  │
+    │  ┌────────────────────────────────────────────────────────┐ │
+    │  │ Status Callback Webhook                             │ │
+    │  │  POST /webhooks/exotel/call-status                  │ │
+    │  │                                                       │ │
+    │  │ Sends: initiated → ringing → in-progress →         │ │
+    │  │        completed/failed                              │ │
+    │  └────────────────────────────────────────────────────────┘ │
+    │                                                              │
+    └──────────────────────────────────────────────────────────────┘
+           △                                              │
+           │                                              │
+           └──────────────┬──────────────────────────────┘
+
+
+CALL FLOW SEQUENCE DIAGRAM
+================================================================================
+
+Timeline:        Action:                        Component:           Storage:
+
+0ms    ┌─────────────────────────────────────────────────────────────┐
+       │ 1. Initiate Outbound Call                                  │
+       │    customer.phone = "+919876543210"                         │
+       │    lead_id = 123, lead_name = "John"                       │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+                    ExotelClient.make_call()
+                              │
+                    REST API to Exotel
+                    POST /Calls/connect.json
+                              │
+                              ├─ From: 080XXXXXXXX
+                              ├─ To: +919876543210
+                              ├─ CustomField: {...}
+                              ├─ Url: Exophlo ID
+                              └─ StatusCallback: /webhooks/exotel/call-status
+                              │
+                              ▼
+100ms  ┌─────────────────────────────────────────────────────────────┐
+       │ Exotel receives call request                                │
+       │ Status: "initiated" → Webhook sent                          │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+1000ms ┌─────────────────────────────────────────────────────────────┐
+       │ 2. Call Rings & Customer Picks Up                           │
+       │    Status: "ringing" → Webhook sent                         │
+       │    Status: "in-progress" → Webhook sent                     │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+1100ms ┌─────────────────────────────────────────────────────────────┐
+       │ 3. WebSocket Connection Established                         │
+       │    Exotel Voicebot connects to /media                       │
+       │    Event: "connected"                                       │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+                    ExotelEventHandler.
+                    handle_connected()
+                              │
+                              ▼
+1150ms ┌─────────────────────────────────────────────────────────────┐
+       │ 4. Media Streaming Started                                  │
+       │    Event: "start"                                           │
+       │    ├─ call_sid: "call_abc123"                              │
+       │    ├─ from: "+919876543210"                                │
+       │    └─ customField: {"lead_id": 123}                        │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+                    ExotelEventHandler.
+                    handle_start()
+                              │
+                              ├─ Create ConversationSession
+                              ├─ Store in Redis
+                              ├─ Generate intro: "Hi John, this is..."
+                              ├─ TTS to speech
+                              └─ Send audio chunks
+                              │
+                              ▼
+1200ms ┌─────────────────────────────────────────────────────────────┐
+       │ 5. Send Intro Audio to Customer                             │
+       │    Event: "media" (x50 chunks, 20ms each)                  │
+       │    Customer hears: "Hi John, this is..."                   │
+       │                                                              │
+       │    Redis: session:call_abc123                       ✓✓✓   │
+       │    ├─ is_bot_speaking = True                               │
+       │    ├─ waiting_for_response = False                         │
+       │    └─ transcript: [{"speaker":"ai", "text":"..."}]        │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+2000ms ┌─────────────────────────────────────────────────────────────┐
+       │ 6. Intro Finished                                           │
+       │    is_bot_speaking = False                                  │
+       │    waiting_for_response = True                              │
+       │    (Ready to listen)                                        │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+2100ms ┌─────────────────────────────────────────────────────────────┐
+       │ 7. Customer Starts Speaking                                 │
+       │    Event: "media" (audio chunks with voice)                │
+       │    Customer says: "I'm interested in apartments"            │
+       │                                                              │
+       │    ExotelEventHandler.handle_media()                       │
+       │    ├─ Decode Base64 → PCM                                  │
+       │    └─ Accumulate in buffer                                 │
+       │                                                              │
+       │    Redis: session:call_abc123                       ✓✓✓   │
+       │    └─ audio_buffer += chunk                                │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+3500ms ┌─────────────────────────────────────────────────────────────┐
+       │ 8. Customer Stopped Speaking (Silence Detected)             │
+       │    ├─ 0.5s audio + 600ms silence detected                 │
+       │    ├─ Ready to transcribe                                  │
+       │    │                                                        │
+       │    └─ Deepgram STT: transcribe_audio()                     │
+       │       Response: "I'm interested in apartments"              │
+       │                                                              │
+       │    Redis: session:call_abc123                       ✓✓✓   │
+       │    └─ transcript: [..., {"speaker":"user",                 │
+       │                         "text":"I'm interested..."}]       │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+3600ms ┌─────────────────────────────────────────────────────────────┐
+       │ 9. Process with LLM                                         │
+       │    ConversationEngine.process_user_input()                  │
+       │    │                                                        │
+       │    └─ OpenAI GPT-4o-mini                                   │
+       │       Input: Full conversation history                      │
+       │       Response: "Great! What's your budget?"                │
+       │       Decision: Continue (should_end=False)                │
+       │                                                              │
+       │    Check latency: 400ms > 300ms → Play filler             │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+3650ms ┌─────────────────────────────────────────────────────────────┐
+       │ 10. Play Filler Audio (Latency Mask)                        │
+       │     Event: "media" (filler: "hmm.pcm")                     │
+       │     Makes natural conversation feel while LLM processes    │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+4100ms ┌─────────────────────────────────────────────────────────────┐
+       │ 11. Send LLM Response                                       │
+       │     "Great! What's your budget?"                            │
+       │     │                                                       │
+       │     ├─ ElevenLabs TTS                                      │
+       │     ├─ Chunk into 20ms segments                            │
+       │     ├─ Base64 encode                                       │
+       │     └─ Send via WebSocket "media" events                   │
+       │                                                              │
+       │     Check every 3 chunks: Customer interrupted?            │
+       │     (Barge-in detection)                                   │
+       │                                                              │
+       │    Redis: session:call_abc123                       ✓✓✓   │
+       │    ├─ is_bot_speaking = True                               │
+       │    ├─ waiting_for_response = False                         │
+       │    └─ transcript: [..., {"speaker":"ai",                   │
+       │                         "text":"Great! What's..."}]       │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+5000ms ┌─────────────────────────────────────────────────────────────┐
+       │ 12. Response Finished                                       │
+       │     is_bot_speaking = False                                 │
+       │     waiting_for_response = True                             │
+       │     Loop back to Step 7 ↑                                   │
+       │     (Listen for next customer input)                        │
+       │                                                              │
+       │    PostgreSQL CallSession                          ✓✓✓   │
+       │    └─ Updated periodically, saved on completion            │
+       └──────────────────────┬──────────────────────────────────────┘
+                              │
+                              ▼
+                    [Repeat steps 7-12]
+                    Customer answers,
+                    AI responds, etc.
+                              │
+                              ▼
+15000ms ┌────────────────────────────────────────────────────────────┐
+        │ 13. Call Ends (LLM decides or customer hangs up)           │
+        │     LLM returns: should_end=True                           │
+        │     Close WebSocket                                        │
+        │     Exotel sends: "stop" event                             │
+        │                                                             │
+        │     ExotelEventHandler.handle_stop()                       │
+        │     └─ Mark session as ended                              │
+        │                                                             │
+        │     Redis: session:call_abc123                    ✓✓✓    │
+        │     └─ Remains in Redis for 1 hour (TTL)                  │
+        └────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+15100ms ┌────────────────────────────────────────────────────────────┐
+        │ 14. Exotel Status Callback (Separate Event)               │
+        │     POST /webhooks/exotel/call-status                     │
+        │     Status: "completed"                                   │
+        │     Duration: 14100 seconds                               │
+        │     RecordingUrl: https://cdn.exotel.com/...             │
+        │                                                             │
+        │     exotel_call_status_webhook()                          │
+        │     └─ Update CallSession DB                              │
+        │        ├─ status = COMPLETED                              │
+        │        ├─ ended_at = now                                  │
+        │        ├─ duration_seconds = 14100                        │
+        │        ├─ recording_url = ...                             │
+        │        └─ Process outcome                                 │
+        │                                                             │
+        │     PostgreSQL CallSession                        ✓✓✓    │
+        │     └─ Fully updated with final details                   │
+        └────────────────────────────────────────────────────────────┘
+
+
+AUDIO FLOW DIAGRAM
+================================================================================
+
+INCOMING AUDIO (Customer → Server)
+    
+    Exotel sends every 60ms (3 events per 180ms):
+    
+    Media Event (JSON):
+    ┌─────────────────────────────────────┐
+    │ {                                   │
+    │   "event": "media",                 │
+    │   "media": {                        │
+    │     "payload": "gABkAG..."          │  ← Base64-encoded PCM
+    │   }                                 │
+    │ }                                   │
+    └──────────────┬──────────────────────┘
+                   │
+        ┌──────────▼──────────┐
+        │ AudioProcessor      │
+        │ decode_exotel_audio │
+        └──────────┬──────────┘
+                   │
+                   ▼
+        ┌──────────────────────┐
+        │ Raw PCM bytes        │
+        │ 16-bit, 8kHz, mono   │
+        │ ~160 bytes (20ms)    │
+        └──────────┬──────────┘
+                   │
+                   ▼
+        ┌──────────────────────┐
+        │ Add to buffer:       │
+        │ session.audio_buffer │
+        │ += audio_bytes       │
+        └──────────┬──────────┘
+                   │
+                   ▼
+        ┌──────────────────────────────────────┐
+        │ Voice Activity Detector (VAD)        │
+        │ Simple RMS energy-based               │
+        │ VOICE_THRESHOLD = 500                │
+        │ If RMS > 500 → voice detected        │
+        └──────────┬──────────────────────────┘
+                   │
+              ┌────┴─────┐
+              │           │
+              ▼           ▼
+        ┌─────────┐   ┌──────────┐
+        │ Voice   │   │ Silence  │
+        │ Found   │   │ Detected │
+        └────┬────┘   └────┬─────┘
+             │             │
+             ▼             ▼
+        ┌─────────┐   ┌──────────────┐
+        │ Reset   │   │ Increment    │
+        │ silence │   │ silence_chunks   │
+        │ counter │   └────┬─────────┘
+        └─────────┘        │
+                           ▼
+                      ┌─────────────────┐
+                      │ Is silence      │
+                      │ >= 600ms (10x)  │
+                      │ & buffer >= 0.5s?
+                      └────┬────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │ No          │ Yes
+                    ▼             ▼
+                  WAIT          TRANSCRIBE
+                                   │
+                             ┌─────▼──────┐
+                             │ Deepgram   │
+                             │ STT        │
+                             │ transcribe │
+                             └─────┬──────┘
+                                   │
+                                   ▼
+                             ┌──────────────┐
+                             │ Get text:    │
+                             │ "I'm         │
+                             │  interested" │
+                             └─────┬────────┘
+                                   │
+                                   ▼
+                             ┌──────────────┐
+                             │ Add to       │
+                             │ transcript   │
+                             └─────┬────────┘
+                                   │
+                                   ▼
+                             ┌──────────────┐
+                             │ Send to LLM  │
+                             │ (OpenAI)     │
+                             └──────────────┘
+
+OUTGOING AUDIO (Server → Customer)
+
+    LLM Response:
+    ┌──────────────────────────┐
+    │ "Great! What's your      │
+    │  budget?"                │
+    └───────────┬──────────────┘
+                │
+       ┌────────▼────────┐
+       │ ElevenLabs TTS  │
+       │ generate_speech │
+       └────────┬────────┘
+                │
+                ▼
+       ┌──────────────────┐
+       │ PCM Audio        │
+       │ 8kHz, 16-bit     │
+       │ mono             │
+       │ Full response    │
+       └────────┬─────────┘
+                │
+       ┌────────▼────────────┐
+       │ AudioProcessor      │
+       │ chunk_audio(20ms)   │
+       └────────┬────────────┘
+                │
+                ▼
+       ┌──────────────────────┐
+       │ List of chunks       │
+       │ 320 bytes each       │
+       │ (20ms @ 8kHz)        │
+       └────────┬─────────────┘
+                │
+       ┌────────▼────────────────┐
+       │ For each chunk:          │
+       │ AudioProcessor           │
+       │ encode_for_exotel()      │
+       └────────┬─────────────────┘
+                │
+                ▼
+       ┌──────────────────────┐
+       │ Base64 encoded PCM   │
+       │ "gABkAG..."          │
+       └────────┬─────────────┘
+                │
+       ┌────────▼──────────────────────┐
+       │ Send WebSocket Event:          │
+       │ {                              │
+       │   "event": "media",            │
+       │   "media": {                   │
+       │     "payload": "gABkAG..."     │
+       │   }                            │
+       │ }                              │
+       │                                │
+       │ Check every 3 chunks:          │
+       │ if customer interrupts         │
+       │ (barge-in) → Stop sending      │
+       └────────┬──────────────────────┘
+                │
+                ▼
+       ┌──────────────────────┐
+       │ Exotel receives      │
+       │ and plays to customer│
+       │                      │
+       │ Customer hears:      │
+       │ "Great! What's your  │
+       │  budget?"            │
+       └──────────────────────┘
+
+
+DATA FLOW IN REDIS
+================================================================================
+
+Key: "session:{call_sid}"
+TTL: 3600 seconds (1 hour)
+
+Value: JSON of ConversationSession
+{
+  "call_sid": "call_abc123def456",
+  "lead_id": 123,
+  "lead_name": "John Doe",
+  "lead_phone": "+919876543210",
+  "property_type": "apartment",
+  "location": "Mumbai",
+  "budget": "50L - 75L",
+  "source": "inbound",
+  
+  "conversation_stage": "QUALIFICATION",
+  "is_bot_speaking": false,
+  "waiting_for_response": true,
+  "should_stop_speaking": false,
+  
+  "audio_buffer": "<binary PCM data>",
+  "transcript_history": [
+    {
+      "speaker": "ai",
+      "text": "Hi John, this is...",
+      "timestamp": "2026-01-24T10:00:00"
+    },
+    {
+      "speaker": "user",
+      "text": "I'm interested in apartments",
+      "timestamp": "2026-01-24T10:00:05"
+    },
+    {
+      "speaker": "ai",
+      "text": "Great! What's your budget?",
+      "timestamp": "2026-01-24T10:00:07"
+    }
+  ],
+  
+  "collected_data": {
+    "initial_interest": "apartment",
+    "budget_mentioned": "50L - 75L"
+  },
+  
+  "escalation_requested": false,
+  "final_outcome": null,
+  
+  "created_at": "2026-01-24T10:00:00",
+  "last_interaction_time": "2026-01-24T10:00:07"
+}
+
+
+ENVIRONMENT CONFIGURATION
+================================================================================
+
+.env file must contain:
+
+# Exotel Settings
+EXOTEL_ACCOUNT_SID=abc123def456
+EXOTEL_API_KEY=your_api_key
+EXOTEL_API_TOKEN=your_api_token
+EXOTEL_VIRTUAL_NUMBER=080XXXXXXXX
+EXOTEL_EXOPHLO_ID=your_exophlo_id
+
+# Server Configuration
+OUR_BASE_URL=https://your-domain.com
+    (or for local: https://your-id.ngrok.io)
+
+# AI Services
+DEEPGRAM_API_KEY=your_deepgram_key
+OPENAI_API_KEY=sk-your_openai_key
+ELEVENLABS_API_KEY=your_elevenlabs_key
+ELEVENLABS_VOICE_ID=your_voice_id (optional)
+
+# Infrastructure
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+REDIS_URL=redis://localhost:6379
+
+# Settings
+WEBSOCKET_ENDPOINT_PATH=/media
+MAX_CALL_DURATION_MINUTES=10
+
+
+EXOTEL DASHBOARD CONFIGURATION
+================================================================================
+
+1. Virtual Number (Exophone)
+   - Go to: My Numbers
+   - Create or select Exophone: 080XXXXXXXX
+   - Status: Active
+   - IVR: Disabled (using Exophlo instead)
+
+2. Call Flow (Exophlo)
+   - Go to: Exophlo
+   - Create new flow
+   - Add "Voicebot Applet":
+     ├─ Name: VoiceBot
+     ├─ WebSocket URL: wss://{OUR_BASE_URL}/media
+     ├─ Audio Format: PCM (NOT GSM)
+     ├─ Sample Rate: 8000 Hz
+     ├─ Bit Depth: 16-bit
+     ├─ Channels: Mono (1)
+     └─ Voice Activity Detection: Enable
+   - Save and copy Exophlo ID
+
+3. Webhooks (Status Callbacks)
+   - Go to: Settings → Webhooks
+   - Add new webhook:
+     ├─ Event: Call Status
+     ├─ URL: https://{OUR_BASE_URL}/webhooks/exotel/call-status
+     └─ Status codes to listen: initiated, ringing, 
+                                in-progress, completed, failed
+
+================================================================================
+                              END OF ARCHITECTURE
+================================================================================

@@ -128,6 +128,17 @@ class Phase2EventHandler:
                 self.audio_buffers[call_sid] = bytearray()
                 self.chunk_counters[call_sid] = 0
 
+            # DIAGNOSTIC: Analyze audio content (every 50 chunks)
+            if self.chunk_counters[call_sid] % 50 == 0:
+                # Calculate RMS (root mean square) to detect if audio has content
+                import struct
+                samples = struct.unpack(f"<{len(audio_bytes)//2}h", audio_bytes)
+                rms = (sum(s*s for s in samples) / len(samples)) ** 0.5
+                max_amplitude = max(abs(s) for s in samples)
+
+                logger.info(f"🔍 AUDIO ANALYSIS: RMS={rms:.2f}, Max={max_amplitude}, Bytes={len(audio_bytes)}, "
+                           f"First 20 bytes: {audio_bytes[:20].hex()}")
+
             # Add to audio buffer
             self.audio_buffers[call_sid].extend(audio_bytes)
             self.chunk_counters[call_sid] += 1
