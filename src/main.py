@@ -37,28 +37,49 @@ async def lifespan(app: FastAPI):
     logger.info("Starting application", environment=settings.ENVIRONMENT)
 
     try:
-        # Initialize database
-        await init_db(settings.DATABASE_URL)
-        logger.info("Database initialized successfully")
+        # Initialize database (only if DATABASE_URL is configured)
+        if settings.DATABASE_URL:
+            await init_db(settings.DATABASE_URL)
+            logger.info("Database initialized successfully")
+        else:
+            logger.warning("Database not configured - skipping database initialization")
 
-        # Initialize Redis
-        await init_redis(settings.REDIS_URL)
-        logger.info("Redis initialized successfully")
+        # Initialize Redis (only if REDIS_URL points to actual Redis server)
+        try:
+            await init_redis(settings.REDIS_URL)
+            logger.info("Redis initialized successfully")
+        except Exception as e:
+            logger.warning(f"Redis connection failed - using in-memory fallback: {e}")
 
-        # Start campaign scheduler
-        await start_campaign_scheduler()
-        logger.info("Campaign scheduler started")
+        # Start campaign scheduler (requires database)
+        if settings.DATABASE_URL:
+            try:
+                await start_campaign_scheduler()
+                logger.info("Campaign scheduler started")
+            except Exception as e:
+                logger.warning(f"Campaign scheduler failed to start: {e}")
+        else:
+            logger.warning("Campaign scheduler disabled - DATABASE_URL not configured")
 
         # Start email monitor (only if email credentials are configured)
-        if settings.EMAIL_ADDRESS and settings.EMAIL_PASSWORD:
-            await start_email_monitor()
-            logger.info("Email monitor started - monitoring inbox for new leads")
+        if settings.EMAIL_ADDRESS and settings.EMAIL_PASSWORD and settings.DATABASE_URL:
+            try:
+                await start_email_monitor()
+                logger.info("Email monitor started - monitoring inbox for new leads")
+            except Exception as e:
+                logger.warning(f"Email monitor failed to start: {e}")
         else:
-            logger.warning("Email monitoring disabled - EMAIL_ADDRESS or EMAIL_PASSWORD not configured")
+            logger.warning("Email monitoring disabled - missing configuration")
 
-        # Start campaign worker for call execution
-        start_worker()
-        logger.info("Campaign worker started")
+        # Start campaign worker for call execution (requires database)
+        if settings.DATABASE_URL:
+            try:
+                start_worker()
+                logger.info("Campaign worker started")
+            except Exception as e:
+                logger.warning(f"Campaign worker failed to start: {e}")
+        else:
+            logger.warning("Campaign worker disabled - DATABASE_URL not configured")
 
         logger.info(
             "Application startup complete",
@@ -76,19 +97,32 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application")
 
     # Stop campaign worker
-    stop_worker()
-    logger.info("Campaign worker stopped")
+    try:
+        stop_worker()
+        logger.info("Campaign worker stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping campaign worker: {e}")
 
     # Stop email monitor
-    await stop_email_monitor()
-    logger.info("Email monitor stopped")
+    try:
+        await stop_email_monitor()
+        logger.info("Email monitor stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping email monitor: {e}")
 
     # Stop campaign scheduler
-    await stop_campaign_scheduler()
-    logger.info("Campaign scheduler stopped")
+    try:
+        await stop_campaign_scheduler()
+        logger.info("Campaign scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping campaign scheduler: {e}")
 
-    await close_db()
-    logger.info("Database connections closed")
+    # Close database connections
+    try:
+        await close_db()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.warning(f"Error closing database: {e}")
 
 
 # Create FastAPI application
