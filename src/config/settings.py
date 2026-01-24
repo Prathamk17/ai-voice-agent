@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: Optional[str] = None
     # Format: postgresql+asyncpg://user:password@localhost:5432/voiceai
+    # Optional for deployment testing - add PostgreSQL service in Railway for production
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
