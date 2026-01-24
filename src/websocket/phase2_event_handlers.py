@@ -39,6 +39,14 @@ class Phase2EventHandler:
         self.audio_buffers = {}  # {call_sid: bytearray()}
         self.chunk_counters = {}  # {call_sid: int}
 
+        # Voice Activity Detection (VAD) state
+        self.is_speech_active = {}  # {call_sid: bool}
+        self.silence_chunk_count = {}  # {call_sid: int}
+
+        # VAD thresholds
+        self.SPEECH_THRESHOLD = 50  # RMS above this = speech
+        self.SILENCE_CHUNKS_REQUIRED = 20  # 20 chunks (~400ms) of silence to end speech
+
     async def handle_connected(
         self,
         websocket,
@@ -93,6 +101,8 @@ class Phase2EventHandler:
         # Initialize audio buffer for this call
         self.audio_buffers[call_sid] = bytearray()
         self.chunk_counters[call_sid] = 0
+        self.is_speech_active[call_sid] = False
+        self.silence_chunk_count[call_sid] = 0
 
         # Send a simple test greeting tone
         await self.send_test_greeting(websocket, call_sid)
@@ -127,70 +137,89 @@ class Phase2EventHandler:
             if call_sid not in self.audio_buffers:
                 self.audio_buffers[call_sid] = bytearray()
                 self.chunk_counters[call_sid] = 0
+                self.is_speech_active[call_sid] = False
+                self.silence_chunk_count[call_sid] = 0
 
-            # DIAGNOSTIC: Analyze audio content (every 50 chunks)
-            if self.chunk_counters[call_sid] % 50 == 0:
-                # Calculate RMS (root mean square) to detect if audio has content
-                import struct
-                samples = struct.unpack(f"<{len(audio_bytes)//2}h", audio_bytes)
-                rms = (sum(s*s for s in samples) / len(samples)) ** 0.5
-                max_amplitude = max(abs(s) for s in samples)
+            # Calculate RMS (root mean square) for Voice Activity Detection
+            import struct
+            samples = struct.unpack(f"<{len(audio_bytes)//2}h", audio_bytes)
+            rms = (sum(s*s for s in samples) / len(samples)) ** 0.5
+            max_amplitude = max(abs(s) for s in samples)
 
-                logger.info(f"🔍 AUDIO ANALYSIS: RMS={rms:.2f}, Max={max_amplitude}, Bytes={len(audio_bytes)}, "
-                           f"First 20 bytes: {audio_bytes[:20].hex()}")
-
-            # Add to audio buffer
-            self.audio_buffers[call_sid].extend(audio_bytes)
+            # Increment chunk counter
             self.chunk_counters[call_sid] += 1
-
             chunk_count = self.chunk_counters[call_sid]
 
-            # Log progress every 50 chunks (about 1 second)
-            if chunk_count % 50 == 1:
-                buffer_size_kb = len(self.audio_buffers[call_sid]) / 1024
-                logger.info(
-                    f"📊 PHASE 2: Collecting audio... {chunk_count} chunks ({buffer_size_kb:.1f} KB)"
-                )
+            # DIAGNOSTIC: Log audio analysis every 50 chunks
+            if chunk_count % 50 == 0:
+                logger.info(f"🔍 AUDIO ANALYSIS: RMS={rms:.2f}, Max={max_amplitude}, Bytes={len(audio_bytes)}, "
+                           f"Speech Active={self.is_speech_active[call_sid]}, "
+                           f"Silence Count={self.silence_chunk_count[call_sid]}")
 
-            # Simple silence detection: check if we have enough audio
-            # In a real implementation, we'd analyze the audio amplitude
-            # For now, we'll transcribe every ~2 seconds of audio (100 chunks)
-            if chunk_count % 100 == 0 and len(self.audio_buffers[call_sid]) > 0:
-                logger.info(f"🎤 PHASE 2: Attempting transcription after {chunk_count} chunks...")
+            # Voice Activity Detection (VAD) Logic
+            is_speech_chunk = rms > self.SPEECH_THRESHOLD
 
-                # Get audio from buffer
-                audio_to_transcribe = bytes(self.audio_buffers[call_sid])
+            if is_speech_chunk:
+                # Speech detected!
+                if not self.is_speech_active[call_sid]:
+                    logger.info(f"🎤 PHASE 2: SPEECH STARTED (RMS={rms:.2f})")
+                    self.is_speech_active[call_sid] = True
 
-                # Clear buffer for next segment
-                self.audio_buffers[call_sid] = bytearray()
+                # Reset silence counter and add to buffer
+                self.silence_chunk_count[call_sid] = 0
+                self.audio_buffers[call_sid].extend(audio_bytes)
 
-                # Transcribe with Deepgram
-                try:
-                    transcription = await self.stt_service.transcribe_audio(audio_to_transcribe, call_sid)
+            else:
+                # Silence or low audio
+                if self.is_speech_active[call_sid]:
+                    # We were speaking, now it's quiet - increment silence counter
+                    self.silence_chunk_count[call_sid] += 1
+                    self.audio_buffers[call_sid].extend(audio_bytes)  # Keep trailing silence
 
-                    if transcription and transcription.strip():
-                        logger.info("=" * 80)
-                        logger.info(f"✅ PHASE 2: TRANSCRIPTION SUCCESSFUL!")
-                        logger.info(f"   📝 You said: '{transcription}'")
-                        logger.info(f"   🔊 Audio size: {len(audio_to_transcribe)} bytes")
-                        logger.info(f"   📞 Call SID: {session.call_sid}")
-                        logger.info("=" * 80)
+                    # Check if silence period is long enough to end speech
+                    if self.silence_chunk_count[call_sid] >= self.SILENCE_CHUNKS_REQUIRED:
+                        logger.info(f"🔇 PHASE 2: SPEECH ENDED (silence for {self.silence_chunk_count[call_sid]} chunks)")
 
-                        # Add to transcript
-                        await self.session_manager.add_to_transcript(
-                            call_sid=session.call_sid,
-                            speaker="customer",
-                            text=transcription
-                        )
+                        # Transcribe the buffered audio
+                        if len(self.audio_buffers[call_sid]) > 8000:  # At least 0.5 seconds
+                            audio_to_transcribe = bytes(self.audio_buffers[call_sid])
 
-                        # Send acknowledgment beep
-                        await self.send_acknowledgment_beep(websocket, session.call_sid)
+                            logger.info(f"🎤 PHASE 2: Transcribing {len(audio_to_transcribe)} bytes...")
 
-                    else:
-                        logger.info(f"⚠️ PHASE 2: Transcription returned empty (silence or unclear speech)")
+                            try:
+                                transcription = await self.stt_service.transcribe_audio(audio_to_transcribe, call_sid)
 
-                except Exception as e:
-                    logger.error(f"❌ PHASE 2: Deepgram transcription failed: {e}")
+                                if transcription and transcription.strip():
+                                    logger.info("=" * 80)
+                                    logger.info(f"✅ PHASE 2: TRANSCRIPTION SUCCESSFUL!")
+                                    logger.info(f"   📝 You said: '{transcription}'")
+                                    logger.info(f"   🔊 Audio size: {len(audio_to_transcribe)} bytes")
+                                    logger.info(f"   📞 Call SID: {session.call_sid}")
+                                    logger.info("=" * 80)
+
+                                    # Add to transcript
+                                    await self.session_manager.add_to_transcript(
+                                        call_sid=session.call_sid,
+                                        speaker="customer",
+                                        text=transcription
+                                    )
+
+                                    # Send acknowledgment beep
+                                    await self.send_acknowledgment_beep(websocket, session.call_sid)
+
+                                else:
+                                    logger.info(f"⚠️ PHASE 2: Transcription returned empty")
+
+                            except Exception as e:
+                                logger.error(f"❌ PHASE 2: Deepgram transcription failed: {e}")
+
+                        else:
+                            logger.info(f"⚠️ PHASE 2: Audio too short ({len(self.audio_buffers[call_sid])} bytes), skipping")
+
+                        # Reset for next speech segment
+                        self.audio_buffers[call_sid] = bytearray()
+                        self.is_speech_active[call_sid] = False
+                        self.silence_chunk_count[call_sid] = 0
 
         except Exception as e:
             logger.error(f"❌ PHASE 2: Error processing media: {e}")
@@ -225,9 +254,15 @@ class Phase2EventHandler:
         if call_sid in self.chunk_counters:
             logger.info(f"   Total audio chunks received: {self.chunk_counters[call_sid]}")
 
-            # Cleanup buffers
-            del self.audio_buffers[call_sid]
-            del self.chunk_counters[call_sid]
+            # Cleanup buffers and VAD state
+            if call_sid in self.audio_buffers:
+                del self.audio_buffers[call_sid]
+            if call_sid in self.chunk_counters:
+                del self.chunk_counters[call_sid]
+            if call_sid in self.is_speech_active:
+                del self.is_speech_active[call_sid]
+            if call_sid in self.silence_chunk_count:
+                del self.silence_chunk_count[call_sid]
 
     async def handle_clear(
         self,
