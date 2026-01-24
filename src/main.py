@@ -186,11 +186,17 @@ async def root():
     Returns:
         dict: Service information
     """
+    import os
+    test_mode = os.getenv("EXOTEL_TEST_MODE", "true").lower() == "true"
+
     return {
         "service": settings.APP_NAME,
         "environment": settings.ENVIRONMENT,
         "status": "running",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "test_mode": test_mode,
+        "websocket_endpoint": f"{settings.OUR_BASE_URL}{settings.WEBSOCKET_ENDPOINT_PATH}",
+        "message": "🧪 Exotel WebSocket testing mode (no AI services)" if test_mode else "🚀 Production mode"
     }
 
 
