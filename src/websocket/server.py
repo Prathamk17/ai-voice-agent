@@ -12,6 +12,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from src.websocket.event_handlers import ExotelEventHandler
 from src.websocket.test_event_handlers import TestExotelEventHandler  # Phase 1
 from src.websocket.phase2_event_handlers import Phase2EventHandler  # Phase 2
+from src.websocket.phase3_event_handlers import Phase3EventHandler  # Phase 3
 from src.websocket.session_manager import SessionManager
 from src.utils.logger import StructuredLogger
 import os
@@ -21,6 +22,7 @@ logger = StructuredLogger(__name__)
 # TEST MODE Configuration:
 # - "phase1" or "true": Minimal test (no AI services)
 # - "phase2": Deepgram STT only (no OpenAI, no ElevenLabs)
+# - "phase3": Deepgram STT + OpenAI LLM (no ElevenLabs TTS yet)
 # - "false": Production mode (all services enabled)
 TEST_MODE = os.getenv("EXOTEL_TEST_MODE", "true").lower()
 
@@ -44,6 +46,9 @@ class ExotelWebSocketServer:
         elif TEST_MODE == "phase2":
             self.event_handler = Phase2EventHandler()
             logger.info("🎤 WebSocket server initialized in PHASE 2 MODE (Deepgram STT only)")
+        elif TEST_MODE == "phase3":
+            self.event_handler = Phase3EventHandler()
+            logger.info("🤖 WebSocket server initialized in PHASE 3 MODE (Deepgram STT + OpenAI LLM)")
         else:
             self.event_handler = ExotelEventHandler()
             logger.info("🚀 WebSocket server initialized in PRODUCTION MODE (all services)")

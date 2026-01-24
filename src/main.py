@@ -194,6 +194,8 @@ async def root():
         mode_message = "🧪 Phase 1: WebSocket testing (no AI services)"
     elif test_mode == "phase2":
         mode_message = "🎤 Phase 2: Deepgram STT testing (speech-to-text only)"
+    elif test_mode == "phase3":
+        mode_message = "🤖 Phase 3: Full AI conversation (Deepgram STT + OpenAI LLM, no TTS yet)"
     else:
         mode_message = "🚀 Production mode (all services enabled)"
 
