@@ -93,7 +93,7 @@ class Phase3EventHandler:
             "lead_name": "Test Customer",
             "property_type": "2BHK apartment",
             "location": "Whitefield, Bangalore",
-            "budget": "80 Lakhs",
+            "budget": None,  # Set to None to avoid validation error (can be numeric like 8000000.0 if needed)
             "source": "phase3_test"
         }
 
