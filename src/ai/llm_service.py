@@ -137,9 +137,14 @@ class LLMService:
                 return self._default_streaming_response(full_response)
 
             # Validate structure
-            if not all(k in result for k in ["intent", "next_action", "response_text", "should_end_call"]):
+            required_fields = ["intent", "next_action", "response_text", "should_end_call"]
+            if not all(k in result for k in required_fields):
                 logger.warning("Incomplete JSON structure", result=result)
                 result = self._fix_json_structure(result, full_response)
+
+            # Ensure extracted_data field exists (even if empty)
+            if "extracted_data" not in result:
+                result["extracted_data"] = {}
 
             # Record metrics
             if METRICS_ENABLED:
@@ -150,6 +155,7 @@ class LLMService:
                 response_length=len(result.get("response_text", "")),
                 intent=result.get("intent"),
                 next_action=result.get("next_action"),
+                extracted_fields=list(k for k, v in result.get("extracted_data", {}).items() if v),
                 duration_seconds=round(duration, 3)
             )
 
@@ -170,7 +176,8 @@ class LLMService:
             "intent": "unclear",
             "next_action": "respond",
             "response_text": fallback_text or "Sorry, could you repeat that?",
-            "should_end_call": False
+            "should_end_call": False,
+            "extracted_data": {}
         }
 
     def _fix_json_structure(self, partial: Dict, raw: str) -> Dict[str, Any]:
@@ -179,7 +186,8 @@ class LLMService:
             "intent": partial.get("intent", "unclear"),
             "next_action": partial.get("next_action", "respond"),
             "response_text": partial.get("response_text") or partial.get("response") or raw[:150],
-            "should_end_call": partial.get("should_end_call", False)
+            "should_end_call": partial.get("should_end_call", False),
+            "extracted_data": partial.get("extracted_data", {})
         }
 
     # Legacy method kept for backward compatibility (deprecated)

@@ -122,6 +122,9 @@ class Phase4EventHandler(Phase3EventHandler):
                 text=response_text
             )
 
+            # Save updated session (with collected_data) back to Redis
+            await self.session_manager.save_session(session)
+
             # PHASE 4: Send actual TTS instead of beep!
             logger.info("🎙️ PHASE 4: Converting response to speech with ElevenLabs TTS...")
             await self.send_tts_to_caller(websocket, response_text, session)

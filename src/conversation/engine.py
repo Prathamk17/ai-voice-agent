@@ -85,6 +85,23 @@ class ConversationEngine:
         should_end_call = llm_result["should_end_call"]
         intent = llm_result["intent"]
         next_action = llm_result["next_action"]
+        extracted_data = llm_result.get("extracted_data", {})
+
+        # Update collected data from LLM extraction
+        if extracted_data:
+            # Filter out null/None values and update session
+            new_data = {k: v for k, v in extracted_data.items() if v is not None}
+
+            if new_data:
+                # Merge with existing collected_data
+                session.collected_data.update(new_data)
+
+                logger.info(
+                    "Updated collected data",
+                    call_sid=session.call_sid,
+                    new_fields=list(new_data.keys()),
+                    all_collected=session.collected_data
+                )
 
         # Determine outcome for call tracking
         call_outcome = None
@@ -104,9 +121,6 @@ class ConversationEngine:
             should_end_call=should_end_call,
             outcome=call_outcome
         )
-
-        # Update collected data from LLM output (optional enhancement)
-        # You could parse response_text for budget/timeline mentions if needed
 
         return response_text, should_end_call, call_outcome
 

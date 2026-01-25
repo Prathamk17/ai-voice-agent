@@ -295,6 +295,9 @@ class Phase3EventHandler:
                 text=response_text
             )
 
+            # Save updated session (with collected_data) back to Redis
+            await self.session_manager.save_session(session)
+
             # Send acknowledgment beep (Phase 4 will replace this with actual TTS)
             await self.send_acknowledgment_beep(websocket, session.call_sid)
 
