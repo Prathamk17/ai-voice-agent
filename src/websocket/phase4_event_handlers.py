@@ -40,6 +40,10 @@ class Phase4EventHandler(Phase3EventHandler):
         # Track if we've sent the intro speech (not just the greeting tone)
         self.intro_speech_sent = {}  # {call_sid: bool}
 
+        # OPTIMIZATION: Lower VAD thresholds for better phone audio detection
+        self.SPEECH_THRESHOLD = 25  # Lowered from 50 for phone audio
+        self.SILENCE_CHUNKS_REQUIRED = 15  # Reduced from 20 for faster response (300ms silence)
+
     async def handle_start(
         self,
         websocket,
@@ -198,9 +202,9 @@ class Phase4EventHandler(Phase3EventHandler):
                 # Send to WebSocket
                 await websocket.send_json(message)
 
-                # Small delay between chunks for natural pacing (20ms per chunk)
-                # This matches the chunk duration for real-time playback
-                await asyncio.sleep(0.02)  # 20ms
+                # OPTIMIZATION: Reduced delay for faster audio streaming
+                # 10ms delay = 2x faster streaming while still smooth
+                await asyncio.sleep(0.01)  # 10ms (was 20ms)
 
             logger.info(f"✅ PHASE 4: All {len(chunks)} chunks sent successfully")
 
