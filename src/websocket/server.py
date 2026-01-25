@@ -216,4 +216,5 @@ class ExotelWebSocketServer:
 
 
 # Global WebSocket server instance
+# Initialized on module load - Version: 2026-01-25-phase4
 websocket_server = ExotelWebSocketServer()
