@@ -159,6 +159,17 @@ class ExotelWebSocketServer:
                         updates={"waiting_for_response": False}
                     )
 
+                    # Persist session data to database before cleanup
+                    # This ensures transcripts are saved even if stop event wasn't called
+                    try:
+                        await self.event_handler.persist_session_to_db(call_sid)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to persist session during cleanup",
+                            call_sid=call_sid,
+                            error=str(e)
+                        )
+
                 logger.info("WebSocket connection closed", call_sid=call_sid)
 
     async def send_message(self, call_sid: str, message: Dict[str, Any]):

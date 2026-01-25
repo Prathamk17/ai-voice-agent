@@ -7,6 +7,7 @@ Handles events: connected, start, media, stop, clear, dtmf
 from typing import Dict, Any
 from datetime import datetime
 import json
+from sqlalchemy import select
 
 from src.websocket.session_manager import SessionManager
 from src.conversation.engine import ConversationEngine
@@ -14,6 +15,8 @@ from src.ai.stt_service import DeepgramSTTService
 from src.ai.tts_service import ElevenLabsTTSService
 from src.audio.processor import AudioProcessor
 from src.models.conversation import ConversationStage
+from src.models.call_session import CallSession
+from src.database.connection import get_async_session_maker
 from src.utils.logger import StructuredLogger
 
 logger = StructuredLogger(__name__)
@@ -409,6 +412,79 @@ class ExotelEventHandler:
             logger.error(f"Failed to play filler audio: {e}", call_sid=session.call_sid)
             return False
 
+    async def persist_session_to_db(self, call_sid: str):
+        """
+        Persist conversation session from Redis to PostgreSQL.
+
+        This saves the transcript and collected data permanently to the database
+        when a call ends, preventing data loss after Redis TTL expires.
+
+        Args:
+            call_sid: Call SID to persist
+        """
+        try:
+            # Get session from Redis
+            session = await self.session_manager.get_session(call_sid)
+
+            if not session:
+                logger.warning(
+                    "Cannot persist session - not found in Redis",
+                    call_sid=call_sid
+                )
+                return
+
+            # Get database session
+            async_session_maker = get_async_session_maker()
+
+            async with async_session_maker() as db:
+                # Find CallSession in database
+                result = await db.execute(
+                    select(CallSession).where(CallSession.call_sid == call_sid)
+                )
+                call_session = result.scalar_one_or_none()
+
+                if not call_session:
+                    logger.warning(
+                        "Cannot persist session - CallSession not found in database",
+                        call_sid=call_sid
+                    )
+                    return
+
+                # Persist transcript
+                if session.transcript_history:
+                    call_session.full_transcript = json.dumps(session.transcript_history)
+                    logger.info(
+                        "Persisting transcript to database",
+                        call_sid=call_sid,
+                        exchanges=len(session.transcript_history)
+                    )
+
+                # Persist collected data
+                if session.collected_data:
+                    call_session.collected_data = json.dumps(session.collected_data)
+                    logger.info(
+                        "Persisting collected data to database",
+                        call_sid=call_sid,
+                        fields=list(session.collected_data.keys())
+                    )
+
+                # Commit to database
+                await db.commit()
+
+                logger.info(
+                    "Session successfully persisted to database",
+                    call_sid=call_sid
+                )
+
+        except Exception as e:
+            logger.error(
+                "Failed to persist session to database",
+                call_sid=call_sid,
+                error=str(e)
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+
     async def handle_stop(
         self,
         websocket,
@@ -418,7 +494,7 @@ class ExotelEventHandler:
         Handle 'stop' event
 
         - Customer disconnected
-        - Save final state
+        - Save final state to database
         - Cleanup session
 
         Args:
@@ -433,7 +509,8 @@ class ExotelEventHandler:
             updates={"waiting_for_response": False}
         )
 
-        # Will be cleaned up by finalize_call
+        # Persist session data to PostgreSQL before Redis expires
+        await self.persist_session_to_db(session.call_sid)
 
     async def handle_clear(
         self,

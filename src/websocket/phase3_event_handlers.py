@@ -358,6 +358,9 @@ class Phase3EventHandler:
             if call_sid in self.intro_sent:
                 del self.intro_sent[call_sid]
 
+        # Persist session data to PostgreSQL
+        await self.persist_session_to_db(call_sid)
+
     async def handle_clear(
         self,
         websocket,
