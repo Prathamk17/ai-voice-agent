@@ -1,7 +1,7 @@
 """
 Main FastAPI application for Real Estate Voice AI Agent.
 Entry point for the application.
-Build: 2026-01-24-v2
+Build: 2026-01-25-phase4
 """
 
 from fastapi import FastAPI, WebSocket
@@ -206,6 +206,7 @@ async def root():
         "environment": settings.ENVIRONMENT,
         "status": "running",
         "version": "1.0.0",
+        "build": "2026-01-25-phase4",
         "test_mode": test_mode,
         "websocket_endpoint": f"{settings.OUR_BASE_URL}{settings.WEBSOCKET_ENDPOINT_PATH}",
         "message": mode_message
