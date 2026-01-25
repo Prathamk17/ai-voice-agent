@@ -267,23 +267,12 @@ class Phase3EventHandler:
         try:
             logger.info("🤖 PHASE 3: Generating AI response with OpenAI...")
 
-            # Get conversation session from session manager
-            # Convert session to ConversationSession for the engine
-            from src.models.conversation import ConversationSession
-
-            # Build conversation session
-            conversation_session = ConversationSession(
-                call_sid=session.call_sid,
-                lead_name=session.lead_context.get("lead_name", "Customer"),
-                property_type=session.lead_context.get("property_type"),
-                location=session.lead_context.get("location"),
-                budget=session.lead_context.get("budget"),
-                transcript_history=session.transcript
-            )
+            # Session is already a ConversationSession object from session_manager.create_session()
+            # Just use it directly - no need to recreate it
 
             # Call the conversation engine to process input
             response_text, should_end_call, call_outcome = await self.conversation_engine.process_user_input(
-                session=conversation_session,
+                session=session,
                 user_input=user_input
             )
 
