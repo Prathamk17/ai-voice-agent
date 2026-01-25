@@ -15,11 +15,14 @@ Use this to test the full conversation flow with AI.
 from typing import Dict, Any
 import json
 import base64
+from sqlalchemy import select
 
 from src.websocket.session_manager import SessionManager
 from src.ai.stt_service import DeepgramSTTService
 from src.audio.processor import AudioProcessor
 from src.conversation.engine import ConversationEngine
+from src.models.call_session import CallSession
+from src.database.connection import get_async_session_maker
 from src.utils.logger import StructuredLogger
 
 logger = StructuredLogger(__name__)
@@ -307,6 +310,79 @@ class Phase3EventHandler:
             # Send error beep
             await self.send_acknowledgment_beep(websocket, session.call_sid)
 
+    async def persist_session_to_db(self, call_sid: str):
+        """
+        Persist conversation session from Redis to PostgreSQL.
+
+        This saves the transcript and collected data permanently to the database
+        when a call ends, preventing data loss after Redis TTL expires.
+
+        Args:
+            call_sid: Call SID to persist
+        """
+        try:
+            # Get session from Redis
+            session = await self.session_manager.get_session(call_sid)
+
+            if not session:
+                logger.warning(
+                    "Cannot persist session - not found in Redis",
+                    call_sid=call_sid
+                )
+                return
+
+            # Get database session
+            async_session_maker = get_async_session_maker()
+
+            async with async_session_maker() as db:
+                # Find CallSession in database
+                result = await db.execute(
+                    select(CallSession).where(CallSession.call_sid == call_sid)
+                )
+                call_session = result.scalar_one_or_none()
+
+                if not call_session:
+                    logger.warning(
+                        "Cannot persist session - CallSession not found in database",
+                        call_sid=call_sid
+                    )
+                    return
+
+                # Persist transcript
+                if session.transcript_history:
+                    call_session.full_transcript = json.dumps(session.transcript_history)
+                    logger.info(
+                        "Persisting transcript to database",
+                        call_sid=call_sid,
+                        exchanges=len(session.transcript_history)
+                    )
+
+                # Persist collected data
+                if session.collected_data:
+                    call_session.collected_data = json.dumps(session.collected_data)
+                    logger.info(
+                        "Persisting collected data to database",
+                        call_sid=call_sid,
+                        fields=list(session.collected_data.keys())
+                    )
+
+                # Commit to database
+                await db.commit()
+
+                logger.info(
+                    "Session successfully persisted to database",
+                    call_sid=call_sid
+                )
+
+        except Exception as e:
+            logger.error(
+                "Failed to persist session to database",
+                call_sid=call_sid,
+                error=str(e)
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+
     async def handle_stop(
         self,
         websocket,
@@ -318,8 +394,8 @@ class Phase3EventHandler:
 
         call_sid = session.call_sid
 
-        # Get final transcript
-        transcript = session.transcript if hasattr(session, 'transcript') else []
+        # Get final transcript (using correct attribute name)
+        transcript = session.transcript_history if hasattr(session, 'transcript_history') else []
 
         if transcript:
             logger.info("=" * 80)
