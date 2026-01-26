@@ -202,7 +202,7 @@ class Phase4EventHandler(Phase3EventHandler):
                 # Create WebSocket message
                 message = {
                     "event": "media",
-                    "streamSid": stream_sid,  # camelCase for outgoing (Twilio/Exotel format)
+                    "streamSid": call_sid,  # Use call_sid to match working test handler
                     "media": {
                         "payload": audio_base64
                     }

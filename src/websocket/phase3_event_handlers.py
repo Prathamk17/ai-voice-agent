@@ -496,7 +496,7 @@ class Phase3EventHandler:
 
             message = {
                 "event": "media",
-                "streamSid": stream_sid,  # camelCase for outgoing (Twilio/Exotel format)
+                "streamSid": call_sid,  # Use call_sid to match working test handler
                 "media": {
                     "payload": audio_base64
                 }
@@ -540,7 +540,7 @@ class Phase3EventHandler:
 
             message = {
                 "event": "media",
-                "streamSid": stream_sid,  # camelCase for outgoing (Twilio/Exotel format)
+                "streamSid": call_sid,  # Use call_sid to match working test handler
                 "media": {
                     "payload": audio_base64
                 }
