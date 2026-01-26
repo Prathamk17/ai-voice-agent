@@ -202,7 +202,7 @@ class Phase4EventHandler(Phase3EventHandler):
                 # Create WebSocket message
                 message = {
                     "event": "media",
-                    "streamSid": stream_sid,  # Use stream_sid, not call_sid
+                    "stream_sid": stream_sid,  # Use lowercase to match Exotel's format
                     "media": {
                         "payload": audio_base64
                     }
