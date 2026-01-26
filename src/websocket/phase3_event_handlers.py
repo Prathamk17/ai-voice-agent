@@ -496,7 +496,7 @@ class Phase3EventHandler:
 
             message = {
                 "event": "media",
-                "stream_sid": stream_sid,  # Use lowercase to match Exotel's format
+                "streamSid": stream_sid,  # camelCase for outgoing (Twilio/Exotel format)
                 "media": {
                     "payload": audio_base64
                 }
@@ -540,7 +540,7 @@ class Phase3EventHandler:
 
             message = {
                 "event": "media",
-                "stream_sid": stream_sid,  # Use lowercase to match Exotel's format
+                "streamSid": stream_sid,  # camelCase for outgoing (Twilio/Exotel format)
                 "media": {
                     "payload": audio_base64
                 }
