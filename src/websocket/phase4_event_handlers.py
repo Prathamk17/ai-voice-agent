@@ -183,6 +183,12 @@ class Phase4EventHandler(Phase3EventHandler):
         Chunks the audio into smaller pieces for smooth playback.
         """
         try:
+            # Get the stream_sid for this call
+            stream_sid = self.stream_sids.get(call_sid)
+            if not stream_sid:
+                logger.error(f"❌ PHASE 4: No stream_sid found for call_sid {call_sid}")
+                return
+
             # Split audio into 20ms chunks for smooth streaming
             chunks = AudioProcessor.chunk_audio(pcm_audio, chunk_duration_ms=20)
 
@@ -196,7 +202,7 @@ class Phase4EventHandler(Phase3EventHandler):
                 # Create WebSocket message
                 message = {
                     "event": "media",
-                    "streamSid": call_sid,
+                    "streamSid": stream_sid,  # Use stream_sid, not call_sid
                     "media": {
                         "payload": audio_base64
                     }

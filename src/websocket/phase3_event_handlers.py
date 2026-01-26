@@ -56,6 +56,9 @@ class Phase3EventHandler:
         # Track if intro has been sent
         self.intro_sent = {}  # {call_sid: bool}
 
+        # Track stream_sid for each call (needed for sending audio back to Exotel)
+        self.stream_sids = {}  # {call_sid: stream_sid}
+
     async def handle_connected(
         self,
         websocket,
@@ -81,11 +84,13 @@ class Phase3EventHandler:
         # Extract call details
         start_data = data.get("start", {})
         call_sid = start_data.get("call_sid") or data.get("call_sid") or data.get("CallSid")
+        stream_sid = start_data.get("stream_sid") or data.get("stream_sid") or data.get("streamSid")
         caller_number = start_data.get("from") or data.get("from")
         virtual_number = start_data.get("to") or data.get("to")
 
         logger.info("✅ PHASE 3: Media streaming STARTED")
         logger.info(f"   Call SID: {call_sid}")
+        logger.info(f"   Stream SID: {stream_sid}")
         logger.info(f"   From: {caller_number}")
         logger.info(f"   To: {virtual_number}")
 
@@ -116,6 +121,7 @@ class Phase3EventHandler:
         self.is_speech_active[call_sid] = False
         self.silence_chunk_count[call_sid] = 0
         self.intro_sent[call_sid] = False
+        self.stream_sids[call_sid] = stream_sid  # Store stream_sid for sending audio back
 
         # Send initial greeting tone
         await self.send_test_greeting(websocket, call_sid)
@@ -482,9 +488,15 @@ class Phase3EventHandler:
             audio_bytes = b''.join(samples)
             audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
 
+            # Get the stream_sid for this call
+            stream_sid = self.stream_sids.get(call_sid)
+            if not stream_sid:
+                logger.error(f"❌ PHASE 3: No stream_sid found for call_sid {call_sid}")
+                return
+
             message = {
                 "event": "media",
-                "streamSid": call_sid,
+                "streamSid": stream_sid,  # Use stream_sid, not call_sid
                 "media": {
                     "payload": audio_base64
                 }
@@ -520,9 +532,15 @@ class Phase3EventHandler:
             audio_bytes = b''.join(samples)
             audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
 
+            # Get the stream_sid for this call
+            stream_sid = self.stream_sids.get(call_sid)
+            if not stream_sid:
+                logger.error(f"❌ PHASE 3: No stream_sid found for call_sid {call_sid}")
+                return
+
             message = {
                 "event": "media",
-                "streamSid": call_sid,
+                "streamSid": stream_sid,  # Use stream_sid, not call_sid
                 "media": {
                     "payload": audio_base64
                 }
