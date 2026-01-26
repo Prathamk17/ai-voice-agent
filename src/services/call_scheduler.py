@@ -5,6 +5,7 @@ Call Scheduler Service for scheduling calls and managing retries.
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 
 from src.models.scheduled_call import ScheduledCall, ScheduledCallStatus
@@ -177,9 +178,13 @@ class CallScheduler:
         available_slots = max_concurrent - active_count
         fetch_limit = min(limit, available_slots)
 
-        # Get pending calls
+        # Get pending calls with eager loading of relationships
         result = await self.db.execute(
             select(ScheduledCall)
+            .options(
+                selectinload(ScheduledCall.lead),
+                selectinload(ScheduledCall.campaign)
+            )
             .where(
                 and_(
                     ScheduledCall.status == ScheduledCallStatus.PENDING,
