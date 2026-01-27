@@ -362,6 +362,24 @@ class Phase3EventHandler:
                 )
                 call_session = result.scalar_one_or_none()
 
+                # Extract timestamps from transcript for accurate duration
+                first_timestamp = None
+                last_timestamp = None
+
+                if session.transcript_history and len(session.transcript_history) > 0:
+                    try:
+                        # Get first message timestamp
+                        first_msg = session.transcript_history[0]
+                        if 'timestamp' in first_msg:
+                            first_timestamp = datetime.fromisoformat(first_msg['timestamp'].replace('Z', '+00:00'))
+
+                        # Get last message timestamp
+                        last_msg = session.transcript_history[-1]
+                        if 'timestamp' in last_msg:
+                            last_timestamp = datetime.fromisoformat(last_msg['timestamp'].replace('Z', '+00:00'))
+                    except (ValueError, KeyError) as e:
+                        logger.warning(f"Failed to parse transcript timestamps: {e}")
+
                 if not call_session:
                     # CallSession doesn't exist - create it (defensive coding for manual/test calls)
                     logger.warning(
@@ -373,9 +391,9 @@ class Phase3EventHandler:
                         call_sid=call_sid,
                         lead_id=session.lead_id if hasattr(session, 'lead_id') and session.lead_id else None,
                         status=CallStatus.COMPLETED,
-                        initiated_at=session.created_at if hasattr(session, 'created_at') else datetime.utcnow(),
-                        answered_at=session.created_at if hasattr(session, 'created_at') else datetime.utcnow(),
-                        ended_at=datetime.utcnow()
+                        initiated_at=first_timestamp or (session.created_at if hasattr(session, 'created_at') else datetime.utcnow()),
+                        answered_at=first_timestamp or (session.created_at if hasattr(session, 'created_at') else datetime.utcnow()),
+                        ended_at=last_timestamp or datetime.utcnow()
                     )
                     db.add(call_session)
                     logger.info(
@@ -384,14 +402,18 @@ class Phase3EventHandler:
                         lead_id=session.lead_id if hasattr(session, 'lead_id') else None
                     )
 
-                # Update end time if not set
-                if not call_session.ended_at:
-                    call_session.ended_at = datetime.utcnow()
+                # Update timestamps if we have better data from transcript
+                if first_timestamp and not call_session.initiated_at:
+                    call_session.initiated_at = first_timestamp
+                if first_timestamp and not call_session.answered_at:
+                    call_session.answered_at = first_timestamp
+                if last_timestamp:
+                    call_session.ended_at = last_timestamp
 
                 # Update status to completed
                 call_session.status = CallStatus.COMPLETED
 
-                # Calculate duration
+                # Calculate duration from actual timestamps
                 if call_session.answered_at and call_session.ended_at:
                     duration = (call_session.ended_at - call_session.answered_at).total_seconds()
                     call_session.duration_seconds = int(duration)
