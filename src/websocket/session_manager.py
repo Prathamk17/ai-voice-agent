@@ -17,12 +17,15 @@ logger = StructuredLogger(__name__)
 
 class SessionManager:
     """
-    Manage WebSocket session state in Redis
+    Manage WebSocket session state in Redis (with in-memory fallback)
     """
 
     def __init__(self):
         self.session_prefix = "session:"
         self.session_ttl = 3600  # 1 hour
+        self.redis_available = True
+        # In-memory fallback storage (used when Redis fails)
+        self._memory_store: Dict[str, ConversationSession] = {}
 
     async def _get_redis(self):
         """Get Redis client dynamically"""
@@ -67,7 +70,7 @@ class SessionManager:
 
     async def get_session(self, call_sid: str) -> Optional[ConversationSession]:
         """
-        Get session from Redis
+        Get session from Redis (or in-memory if Redis unavailable)
 
         Args:
             call_sid: Call SID
@@ -75,36 +78,56 @@ class SessionManager:
         Returns:
             ConversationSession if found, None otherwise
         """
-        key = f"{self.session_prefix}{call_sid}"
-        redis = await self._get_redis()
+        # Try Redis first
+        if self.redis_available:
+            try:
+                key = f"{self.session_prefix}{call_sid}"
+                redis = await self._get_redis()
 
-        data = await redis.get(key)
+                data = await redis.get(key)
 
-        if not data:
+                if data:
+                    session_dict = json.loads(data)
+                    return ConversationSession.from_redis_dict(session_dict)
+            except Exception as e:
+                logger.warning(f"Redis get failed, checking memory: {e}")
+                self.redis_available = False
+
+        # Fallback to in-memory storage
+        session = self._memory_store.get(call_sid)
+        if not session:
             logger.warning("Session not found", call_sid=call_sid)
-            return None
-
-        session_dict = json.loads(data)
-        return ConversationSession.from_redis_dict(session_dict)
+        return session
 
     async def save_session(self, session: ConversationSession):
         """
-        Save session to Redis
+        Save session to Redis (or in-memory if Redis fails)
 
         Args:
             session: Session to save
         """
-        key = f"{self.session_prefix}{session.call_sid}"
-        redis = await self._get_redis()
+        # Try Redis first
+        if self.redis_available:
+            try:
+                key = f"{self.session_prefix}{session.call_sid}"
+                redis = await self._get_redis()
 
-        # Convert to dict for Redis storage
-        session_dict = session.to_redis_dict()
+                # Convert to dict for Redis storage
+                session_dict = session.to_redis_dict()
 
-        await redis.set(
-            key,
-            json.dumps(session_dict),
-            ex=self.session_ttl
-        )
+                await redis.set(
+                    key,
+                    json.dumps(session_dict),
+                    ex=self.session_ttl
+                )
+                return
+            except Exception as e:
+                logger.warning(f"Redis save failed, using in-memory storage: {e}")
+                self.redis_available = False
+
+        # Fallback to in-memory storage
+        self._memory_store[session.call_sid] = session
+        logger.debug(f"Session saved to memory: {session.call_sid}")
 
     async def update_session(
         self,
@@ -135,16 +158,27 @@ class SessionManager:
 
     async def delete_session(self, call_sid: str):
         """
-        Delete session from Redis
+        Delete session from Redis (or in-memory)
 
         Args:
             call_sid: Call SID
         """
-        key = f"{self.session_prefix}{call_sid}"
-        redis = await self._get_redis()
-        await redis.delete(key)
+        # Try Redis first
+        if self.redis_available:
+            try:
+                key = f"{self.session_prefix}{call_sid}"
+                redis = await self._get_redis()
+                await redis.delete(key)
+                logger.info("Session deleted from Redis", call_sid=call_sid)
+                return
+            except Exception as e:
+                logger.warning(f"Redis delete failed, removing from memory: {e}")
+                self.redis_available = False
 
-        logger.info("Session deleted", call_sid=call_sid)
+        # Fallback to in-memory storage
+        if call_sid in self._memory_store:
+            del self._memory_store[call_sid]
+            logger.info("Session deleted from memory", call_sid=call_sid)
 
     async def add_to_transcript(
         self,
@@ -175,17 +209,26 @@ class SessionManager:
 
     async def get_all_active_sessions(self) -> list[str]:
         """
-        Get all active session IDs
+        Get all active session IDs (from Redis or in-memory)
 
         Returns:
             List of call SIDs
         """
-        pattern = f"{self.session_prefix}*"
         keys = []
-        redis = await self._get_redis()
 
-        async for key in redis.scan_iter(match=pattern):
-            call_sid = key.decode('utf-8').replace(self.session_prefix, '')
-            keys.append(call_sid)
+        # Try Redis first
+        if self.redis_available:
+            try:
+                pattern = f"{self.session_prefix}*"
+                redis = await self._get_redis()
 
-        return keys
+                async for key in redis.scan_iter(match=pattern):
+                    call_sid = key.decode('utf-8').replace(self.session_prefix, '')
+                    keys.append(call_sid)
+                return keys
+            except Exception as e:
+                logger.warning(f"Redis scan failed, using memory: {e}")
+                self.redis_available = False
+
+        # Fallback to in-memory storage
+        return list(self._memory_store.keys())
