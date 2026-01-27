@@ -233,7 +233,7 @@ class Phase3EventHandler:
                         logger.info(f"🔇 PHASE 3: SPEECH ENDED (silence for {self.silence_chunk_count[call_sid]} chunks)")
 
                         # Transcribe the buffered audio
-                        if len(self.audio_buffers[call_sid]) > 8000:  # At least 0.5 seconds
+                        if len(self.audio_buffers[call_sid]) > 3200:  # At least 0.2 seconds (reduced to capture short responses)
                             audio_to_transcribe = bytes(self.audio_buffers[call_sid])
 
                             logger.info(f"🎤 PHASE 3: Transcribing {len(audio_to_transcribe)} bytes...")
