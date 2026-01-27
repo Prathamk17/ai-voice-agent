@@ -64,9 +64,12 @@ class Phase4EventHandler(Phase3EventHandler):
 
         # Generate and SPEAK the AI intro message (not just beep)
         if self.intro_sent.get(call_sid):
+            # Re-fetch session to get the updated transcript with intro message
+            session = await self.session_manager.get_session(call_sid)
+
             # Get the intro message from transcript
             intro_message = None
-            if hasattr(session, 'transcript') and session.transcript:
+            if session and hasattr(session, 'transcript') and session.transcript:
                 # Find the first agent message in transcript
                 for entry in session.transcript:
                     if entry.get('speaker') == 'agent':
