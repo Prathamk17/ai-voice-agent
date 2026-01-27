@@ -50,8 +50,9 @@ class Phase3EventHandler:
         self.silence_chunk_count = {}  # {call_sid: int}
 
         # VAD thresholds
-        # Phone audio through Exotel has very low RMS (typically 5-15)
-        self.SPEECH_THRESHOLD = 5  # RMS above this = speech (lowered for phone audio)
+        # Baseline noise: RMS ~8 (should be ignored)
+        # Actual speech: RMS 50-5000+ (should be detected)
+        self.SPEECH_THRESHOLD = 30  # Set to 30 to filter baseline noise but capture speech
         self.SILENCE_CHUNKS_REQUIRED = 20  # 20 chunks (~400ms) of silence to end speech
 
         # Track if intro has been sent

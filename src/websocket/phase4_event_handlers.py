@@ -40,9 +40,10 @@ class Phase4EventHandler(Phase3EventHandler):
         # Track if we've sent the intro speech (not just the greeting tone)
         self.intro_speech_sent = {}  # {call_sid: bool}
 
-        # OPTIMIZATION: Lower VAD thresholds for better phone audio detection
-        # Phone audio through Exotel has very low RMS (typically 5-15)
-        self.SPEECH_THRESHOLD = 5  # Lowered to 5 for phone audio (was 50, real audio RMS is ~8)
+        # OPTIMIZATION: VAD threshold tuned for Exotel phone audio
+        # Baseline noise: RMS ~8 (should be ignored)
+        # Actual speech: RMS 50-5000+ (should be detected)
+        self.SPEECH_THRESHOLD = 30  # Set to 30 to filter baseline noise but capture speech
         self.SILENCE_CHUNKS_REQUIRED = 15  # Reduced from 20 for faster response (300ms silence)
 
     async def handle_start(
