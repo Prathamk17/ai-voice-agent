@@ -97,6 +97,7 @@ EXAMPLES OF REPETITION TO AVOID:
 ✅ Move to next question: "Got it! When are you looking to move?"
 
 Remember: Sound human, not like a bot reading a script. Be helpful, not pushy. DON'T repeat yourself!
+"""
 
 
 def get_intro_template(
