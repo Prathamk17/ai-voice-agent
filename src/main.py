@@ -19,6 +19,7 @@ from src.api.webhooks import router as webhooks_router
 from src.api.analytics import router as analytics_router
 from src.api.dashboard import router as dashboard_router
 from src.api.exports import router as exports_router
+from src.api.debug import router as debug_router
 from src.services.campaign_scheduler import start_campaign_scheduler, stop_campaign_scheduler
 from src.services.email_monitor import start_email_monitor, stop_email_monitor
 from src.workers.campaign_worker import start_worker, stop_worker
@@ -155,6 +156,9 @@ app.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 app.include_router(analytics_router)
 app.include_router(dashboard_router)
 app.include_router(exports_router)
+
+# Debug endpoints (for monitoring in-memory sessions)
+app.include_router(debug_router, prefix="/debug", tags=["debug"])
 
 # Mount static files for dashboard UI
 static_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
