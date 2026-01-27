@@ -21,9 +21,10 @@ from src.websocket.session_manager import SessionManager
 from src.ai.stt_service import DeepgramSTTService
 from src.audio.processor import AudioProcessor
 from src.conversation.engine import ConversationEngine
-from src.models.call_session import CallSession
+from src.models.call_session import CallSession, CallStatus
 from src.database.connection import get_async_session_maker
 from src.utils.logger import StructuredLogger
+from datetime import datetime
 
 logger = StructuredLogger(__name__)
 
@@ -362,11 +363,38 @@ class Phase3EventHandler:
                 call_session = result.scalar_one_or_none()
 
                 if not call_session:
+                    # CallSession doesn't exist - create it (defensive coding for manual/test calls)
                     logger.warning(
-                        "Cannot persist session - CallSession not found in database",
+                        "CallSession not found in database - creating new record",
                         call_sid=call_sid
                     )
-                    return
+
+                    call_session = CallSession(
+                        call_sid=call_sid,
+                        lead_id=session.lead_id if hasattr(session, 'lead_id') and session.lead_id else None,
+                        status=CallStatus.COMPLETED,
+                        initiated_at=session.created_at if hasattr(session, 'created_at') else datetime.utcnow(),
+                        answered_at=session.created_at if hasattr(session, 'created_at') else datetime.utcnow(),
+                        ended_at=datetime.utcnow()
+                    )
+                    db.add(call_session)
+                    logger.info(
+                        "Created new CallSession record",
+                        call_sid=call_sid,
+                        lead_id=session.lead_id if hasattr(session, 'lead_id') else None
+                    )
+
+                # Update end time if not set
+                if not call_session.ended_at:
+                    call_session.ended_at = datetime.utcnow()
+
+                # Update status to completed
+                call_session.status = CallStatus.COMPLETED
+
+                # Calculate duration
+                if call_session.answered_at and call_session.ended_at:
+                    duration = (call_session.ended_at - call_session.answered_at).total_seconds()
+                    call_session.duration_seconds = int(duration)
 
                 # Persist transcript
                 if session.transcript_history:
@@ -391,7 +419,8 @@ class Phase3EventHandler:
 
                 logger.info(
                     "Session successfully persisted to database",
-                    call_sid=call_sid
+                    call_sid=call_sid,
+                    duration_seconds=call_session.duration_seconds
                 )
 
         except Exception as e:
@@ -456,6 +485,20 @@ class Phase3EventHandler:
 
         # Persist session data to PostgreSQL
         await self.persist_session_to_db(call_sid)
+
+        # Clean up session from memory (Redis or in-memory storage)
+        try:
+            await self.session_manager.delete_session(call_sid)
+            logger.info(
+                "Session cleaned up from memory",
+                call_sid=call_sid
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to clean up session from memory",
+                call_sid=call_sid,
+                error=str(e)
+            )
 
     async def handle_clear(
         self,
