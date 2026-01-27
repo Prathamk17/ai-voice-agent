@@ -106,12 +106,21 @@ class Phase3EventHandler:
         }
 
         # Create session
-        session = await self.session_manager.create_session(
-            call_sid=call_sid,
-            lead_context=lead_context
-        )
-
-        logger.info(f"   Session created: {session.call_sid}")
+        try:
+            logger.info(f"🔧 DEBUG: About to create session for call_sid={call_sid}")
+            session = await self.session_manager.create_session(
+                call_sid=call_sid,
+                lead_context=lead_context
+            )
+            logger.info(f"   Session created: {session.call_sid}")
+        except Exception as e:
+            logger.error(f"❌ CRITICAL: Session creation failed with error: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"❌ Call SID: {call_sid}")
+            logger.error(f"❌ Lead context: {lead_context}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+            raise
         logger.info("   📢 Ready to have an AI conversation!")
         logger.info("   💬 Try saying: 'Hello, who is this?'")
 
