@@ -62,10 +62,23 @@ class Phase4EventHandler(Phase3EventHandler):
         # Initialize intro speech tracking
         self.intro_speech_sent[call_sid] = False
 
+        # DEBUG: Check if intro was sent by Phase 3
+        logger.info(f"🔍 PHASE 4 DEBUG: intro_sent[{call_sid}] = {self.intro_sent.get(call_sid)}")
+
         # Generate and SPEAK the AI intro message (not just beep)
         if self.intro_sent.get(call_sid):
+            logger.info("🔍 PHASE 4 DEBUG: Intro was sent, now fetching session...")
+
             # Re-fetch session to get the updated transcript with intro message
             session = await self.session_manager.get_session(call_sid)
+            logger.info(f"🔍 PHASE 4 DEBUG: Re-fetched session = {session is not None}")
+
+            if session:
+                logger.info(f"🔍 PHASE 4 DEBUG: session.transcript exists = {hasattr(session, 'transcript')}")
+                if hasattr(session, 'transcript'):
+                    logger.info(f"🔍 PHASE 4 DEBUG: transcript length = {len(session.transcript) if session.transcript else 0}")
+                    if session.transcript:
+                        logger.info(f"🔍 PHASE 4 DEBUG: transcript entries = {session.transcript}")
 
             # Get the intro message from transcript
             intro_message = None
@@ -74,7 +87,11 @@ class Phase4EventHandler(Phase3EventHandler):
                 for entry in session.transcript:
                     if entry.get('speaker') == 'agent':
                         intro_message = entry.get('text')
+                        logger.info(f"🔍 PHASE 4 DEBUG: Found intro message: '{intro_message[:50]}...'")
                         break
+
+            if not intro_message:
+                logger.warning("⚠️ PHASE 4 DEBUG: No intro message found in transcript!")
 
             if intro_message:
                 try:
@@ -102,7 +119,9 @@ class Phase4EventHandler(Phase3EventHandler):
         Overrides Phase 3 to use actual voice instead of beeps.
         """
         try:
+            logger.info("=" * 80)
             logger.info("🤖 PHASE 4: Generating AI response with OpenAI...")
+            logger.info(f"   User said: '{user_input}'")
 
             # Call the conversation engine to process input
             response_text, should_end_call, call_outcome = await self.conversation_engine.process_user_input(
@@ -187,7 +206,12 @@ class Phase4EventHandler(Phase3EventHandler):
         """
         try:
             # Get the stream_sid for this call
+            logger.info(f"🔍 PHASE 4 DEBUG: Looking up stream_sid for call_sid={call_sid}")
+            logger.info(f"🔍 PHASE 4 DEBUG: Available stream_sids: {list(self.stream_sids.keys())}")
+
             stream_sid = self.stream_sids.get(call_sid)
+            logger.info(f"🔍 PHASE 4 DEBUG: stream_sid = {stream_sid}")
+
             if not stream_sid:
                 logger.error(f"❌ PHASE 4: No stream_sid found for call_sid {call_sid}")
                 return
