@@ -15,6 +15,7 @@ Use this to test the full conversation flow with AI.
 from typing import Dict, Any
 import json
 import base64
+import time
 from sqlalchemy import select
 
 from src.websocket.session_manager import SessionManager
@@ -243,13 +244,17 @@ class Phase3EventHandler:
 
                             try:
                                 # Step 1: Transcribe with Deepgram
+                                t_stt_start = time.time()
                                 transcription = await self.stt_service.transcribe_audio(audio_to_transcribe, call_sid)
+                                t_stt_end = time.time()
+                                stt_latency_ms = (t_stt_end - t_stt_start) * 1000
 
                                 if transcription and transcription.strip():
                                     logger.info("=" * 80)
                                     logger.info(f"✅ PHASE 3: TRANSCRIPTION SUCCESSFUL!")
                                     logger.info(f"   📝 Customer said: '{transcription}'")
                                     logger.info(f"   🔊 Audio size: {len(audio_to_transcribe)} bytes")
+                                    logger.info(f"   ⏱️  STT latency: {stt_latency_ms:.0f}ms ({stt_latency_ms/1000:.2f}s)")
                                     logger.info("=" * 80)
 
                                     # Add to transcript

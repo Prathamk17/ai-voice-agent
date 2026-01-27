@@ -14,6 +14,7 @@ This completes the full AI voice agent experience!
 from typing import Dict, Any
 import base64
 import asyncio
+import time
 
 from src.websocket.phase3_event_handlers import Phase3EventHandler
 from src.ai.tts_service import ElevenLabsTTSService
@@ -121,15 +122,21 @@ class Phase4EventHandler(Phase3EventHandler):
         Overrides Phase 3 to use actual voice instead of beeps.
         """
         try:
+            # === LATENCY TRACKING START ===
+            t_start = time.time()
+
             logger.info("=" * 80)
             logger.info("🤖 PHASE 4: Generating AI response with OpenAI...")
             logger.info(f"   User said: '{user_input}'")
 
             # Call the conversation engine to process input
+            t_llm_start = time.time()
             response_text, should_end_call, call_outcome = await self.conversation_engine.process_user_input(
                 session=session,
                 user_input=user_input
             )
+            t_llm_end = time.time()
+            llm_latency_ms = (t_llm_end - t_llm_start) * 1000
 
             # Log the AI response
             logger.info("=" * 80)
@@ -137,6 +144,7 @@ class Phase4EventHandler(Phase3EventHandler):
             logger.info(f"   💬 Agent says: '{response_text}'")
             logger.info(f"   📊 Should end call: {should_end_call}")
             logger.info(f"   🎯 Call outcome: {call_outcome or 'ongoing'}")
+            logger.info(f"   ⏱️  LLM latency: {llm_latency_ms:.0f}ms ({llm_latency_ms/1000:.2f}s)")
             logger.info("=" * 80)
 
             # Add AI response to transcript
@@ -151,7 +159,20 @@ class Phase4EventHandler(Phase3EventHandler):
 
             # PHASE 4: Send actual TTS instead of beep!
             logger.info("🎙️ PHASE 4: Converting response to speech with ElevenLabs TTS...")
+            t_tts_start = time.time()
             await self.send_tts_to_caller(websocket, response_text, session)
+            t_tts_end = time.time()
+            tts_latency_ms = (t_tts_end - t_tts_start) * 1000
+
+            # === LATENCY TRACKING END ===
+            total_latency_ms = (t_tts_end - t_start) * 1000
+
+            logger.info("=" * 80)
+            logger.info("⏱️  LATENCY BREAKDOWN")
+            logger.info(f"   LLM (OpenAI):       {llm_latency_ms:>6.0f}ms ({llm_latency_ms/total_latency_ms*100:>5.1f}%)")
+            logger.info(f"   TTS (ElevenLabs):   {tts_latency_ms:>6.0f}ms ({tts_latency_ms/total_latency_ms*100:>5.1f}%)")
+            logger.info(f"   TOTAL:              {total_latency_ms:>6.0f}ms ({total_latency_ms/1000:.2f}s)")
+            logger.info("=" * 80)
 
             # If AI decided to end call, log it
             if should_end_call:
@@ -177,21 +198,29 @@ class Phase4EventHandler(Phase3EventHandler):
             logger.info(f"🎙️ PHASE 4: Generating TTS for: '{text[:100]}...'")
 
             # Generate speech with ElevenLabs
+            t_tts_gen_start = time.time()
             pcm_audio = await self.tts_service.generate_speech(
                 text=text,
                 call_sid=call_sid
             )
+            t_tts_gen_end = time.time()
+            tts_gen_latency_ms = (t_tts_gen_end - t_tts_gen_start) * 1000
 
             logger.info(f"✅ PHASE 4: TTS generated, audio size: {len(pcm_audio)} bytes")
 
             # Calculate duration for logging
             duration_ms = AudioProcessor.get_audio_duration_ms(pcm_audio)
             logger.info(f"   📊 Audio duration: {duration_ms}ms ({duration_ms/1000:.2f}s)")
+            logger.info(f"   ⏱️  TTS generation: {tts_gen_latency_ms:.0f}ms ({tts_gen_latency_ms/1000:.2f}s)")
 
             # Send audio to caller via WebSocket
+            t_stream_start = time.time()
             await self._stream_audio_to_caller(websocket, pcm_audio, call_sid)
+            t_stream_end = time.time()
+            stream_latency_ms = (t_stream_end - t_stream_start) * 1000
 
-            logger.info("✅ PHASE 4: TTS audio sent to caller successfully")
+            logger.info(f"✅ PHASE 4: TTS audio sent to caller successfully")
+            logger.info(f"   ⏱️  Audio streaming: {stream_latency_ms:.0f}ms ({stream_latency_ms/1000:.2f}s)")
 
         except Exception as e:
             logger.error(f"❌ PHASE 4: TTS generation/sending failed: {e}")
