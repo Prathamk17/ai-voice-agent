@@ -20,12 +20,15 @@ class SessionManager:
     Manage WebSocket session state in Redis (with in-memory fallback)
     """
 
+    # Class-level in-memory store (shared across all instances)
+    _shared_memory_store: Dict[str, ConversationSession] = {}
+
     def __init__(self):
         self.session_prefix = "session:"
         self.session_ttl = 3600  # 1 hour
         self.redis_available = True
-        # In-memory fallback storage (used when Redis fails)
-        self._memory_store: Dict[str, ConversationSession] = {}
+        # Use class-level shared memory store
+        self._memory_store = SessionManager._shared_memory_store
 
     async def _get_redis(self):
         """Get Redis client dynamically"""
