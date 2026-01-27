@@ -74,17 +74,17 @@ class Phase4EventHandler(Phase3EventHandler):
             logger.info(f"🔍 PHASE 4 DEBUG: Re-fetched session = {session is not None}")
 
             if session:
-                logger.info(f"🔍 PHASE 4 DEBUG: session.transcript exists = {hasattr(session, 'transcript')}")
-                if hasattr(session, 'transcript'):
-                    logger.info(f"🔍 PHASE 4 DEBUG: transcript length = {len(session.transcript) if session.transcript else 0}")
-                    if session.transcript:
-                        logger.info(f"🔍 PHASE 4 DEBUG: transcript entries = {session.transcript}")
+                logger.info(f"🔍 PHASE 4 DEBUG: session.transcript_history exists = {hasattr(session, 'transcript_history')}")
+                if hasattr(session, 'transcript_history'):
+                    logger.info(f"🔍 PHASE 4 DEBUG: transcript length = {len(session.transcript_history) if session.transcript_history else 0}")
+                    if session.transcript_history:
+                        logger.info(f"🔍 PHASE 4 DEBUG: transcript entries = {session.transcript_history}")
 
             # Get the intro message from transcript
             intro_message = None
-            if session and hasattr(session, 'transcript') and session.transcript:
+            if session and hasattr(session, 'transcript_history') and session.transcript_history:
                 # Find the first agent message in transcript
-                for entry in session.transcript:
+                for entry in session.transcript_history:
                     if entry.get('speaker') == 'agent':
                         intro_message = entry.get('text')
                         logger.info(f"🔍 PHASE 4 DEBUG: Found intro message: '{intro_message[:50]}...'")

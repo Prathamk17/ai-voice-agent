@@ -236,7 +236,7 @@ class Phase2EventHandler:
         call_sid = session.call_sid
 
         # Get final transcript
-        transcript = session.transcript if hasattr(session, 'transcript') else []
+        transcript = session.transcript_history if hasattr(session, 'transcript_history') else []
 
         if transcript:
             logger.info("=" * 80)
