@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 import redis.asyncio as redis
 from typing import AsyncGenerator
+import asyncio
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Create base for models
 Base = declarative_base()
@@ -17,12 +21,14 @@ async_session_maker = None
 redis_client = None
 
 
-async def init_db(database_url: str) -> None:
+async def init_db(database_url: str, max_retries: int = 5, retry_delay: int = 2) -> None:
     """
-    Initialize database connection and create tables.
+    Initialize database connection and create tables with retry logic.
 
     Args:
         database_url: PostgreSQL connection string (must use asyncpg driver)
+        max_retries: Maximum number of connection attempts (default: 5)
+        retry_delay: Initial delay between retries in seconds (default: 2)
     """
     global engine, async_session_maker
 
@@ -48,9 +54,29 @@ async def init_db(database_url: str) -> None:
     from src.models.call_session import CallSession
     from src.models.scheduled_call import ScheduledCall
 
-    # Create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Create tables with retry logic (Railway services may not be ready immediately)
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Attempting database connection (attempt {attempt}/{max_retries})")
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created successfully")
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait_time = retry_delay * (2 ** (attempt - 1))  # Exponential backoff
+                logger.warning(
+                    f"Database connection failed (attempt {attempt}/{max_retries}): {str(e)}. "
+                    f"Retrying in {wait_time} seconds..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Database connection failed after {max_retries} attempts: {str(e)}")
+
+    # If we get here, all retries failed
+    raise last_error
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -79,23 +105,47 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def init_redis(redis_url: str) -> None:
+async def init_redis(redis_url: str, max_retries: int = 5, retry_delay: int = 2) -> None:
     """
-    Initialize Redis connection for session storage.
+    Initialize Redis connection for session storage with retry logic.
 
     Args:
         redis_url: Redis connection string (e.g., redis://localhost:6379)
+        max_retries: Maximum number of connection attempts (default: 5)
+        retry_delay: Initial delay between retries in seconds (default: 2)
     """
     global redis_client
 
-    redis_client = await redis.from_url(
-        redis_url,
-        encoding="utf-8",
-        decode_responses=False,  # We'll handle encoding ourselves
-        socket_connect_timeout=5,
-        socket_keepalive=True,
-        health_check_interval=30,
-    )
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Attempting Redis connection (attempt {attempt}/{max_retries})")
+            redis_client = await redis.from_url(
+                redis_url,
+                encoding="utf-8",
+                decode_responses=False,  # We'll handle encoding ourselves
+                socket_connect_timeout=5,
+                socket_keepalive=True,
+                health_check_interval=30,
+            )
+            # Test the connection
+            await redis_client.ping()
+            logger.info("Redis connection established successfully")
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait_time = retry_delay * (2 ** (attempt - 1))  # Exponential backoff
+                logger.warning(
+                    f"Redis connection failed (attempt {attempt}/{max_retries}): {str(e)}. "
+                    f"Retrying in {wait_time} seconds..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Redis connection failed after {max_retries} attempts: {str(e)}")
+
+    # If we get here, all retries failed
+    raise last_error
 
 
 async def get_redis_client() -> redis.Redis:
