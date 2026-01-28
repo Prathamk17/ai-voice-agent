@@ -139,6 +139,10 @@ class Phase3EventHandler:
         # Send initial greeting tone
         await self.send_test_greeting(websocket, call_sid)
 
+        # Start persistent STT streaming (low latency mode)
+        await self.stt_service.start_streaming(call_sid)
+        logger.info(f"✅ PHASE 3: Started persistent STT streaming for call {call_sid}")
+
         # Generate and log the AI intro message (but don't speak it yet - using beeps)
         try:
             intro_message = await self.conversation_engine.generate_intro(session)
@@ -509,6 +513,10 @@ class Phase3EventHandler:
                 del self.silence_chunk_count[call_sid]
             if call_sid in self.intro_sent:
                 del self.intro_sent[call_sid]
+
+        # Stop persistent STT streaming
+        await self.stt_service.stop_streaming(call_sid)
+        logger.info(f"✅ PHASE 3: Stopped persistent STT streaming for call {call_sid}")
 
         # Persist session data to PostgreSQL
         await self.persist_session_to_db(call_sid)
