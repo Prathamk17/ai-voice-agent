@@ -285,67 +285,67 @@ class ExotelEventHandler:
                 text=transcript
             )
 
-                # LATENCY MASKING: Play filler if LLM takes >300ms
-                import asyncio
-                import time
+            # LATENCY MASKING: Play filler if LLM takes >300ms
+            import asyncio
+            import time
 
-                llm_start_time = time.time()
+            llm_start_time = time.time()
 
-                # Start filler audio task if LLM might take >300ms
-                filler_task = asyncio.create_task(asyncio.sleep(0.3))  # 300ms delay
+            # Start filler audio task if LLM might take >300ms
+            filler_task = asyncio.create_task(asyncio.sleep(0.3))  # 300ms delay
 
-                # Process through conversation engine
-                response_future = asyncio.create_task(
-                    self.conversation_engine.process_user_input(
-                        session=session,
-                        user_input=transcript
-                    )
+            # Process through conversation engine
+            response_future = asyncio.create_task(
+                self.conversation_engine.process_user_input(
+                    session=session,
+                    user_input=transcript
+                )
+            )
+
+            # Wait for either filler timeout or LLM response
+            done, pending = await asyncio.wait(
+                [filler_task, response_future],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # If filler timeout happened first, play filler
+            if filler_task in done and response_future in pending:
+                logger.info("⏱️ LLM taking >300ms, playing filler", call_sid=session.call_sid)
+                await self.play_filler_audio(websocket, session)
+
+            # Wait for LLM response
+            response_text, should_end, outcome = await response_future
+
+            llm_duration = time.time() - llm_start_time
+            logger.info(f"⚡ LLM response time: {llm_duration*1000:.0f}ms", call_sid=session.call_sid)
+
+            # Update session
+            await self.session_manager.save_session(session)
+
+            # Add AI response to transcript
+            await self.session_manager.add_to_transcript(
+                call_sid=session.call_sid,
+                speaker="ai",
+                text=response_text
+            )
+
+            # Send response
+            await self.send_tts_to_caller(websocket, response_text, session)
+
+            # End call if needed
+            if should_end:
+                logger.info(
+                    "Call ending",
+                    call_sid=session.call_sid,
+                    outcome=outcome
                 )
 
-                # Wait for either filler timeout or LLM response
-                done, pending = await asyncio.wait(
-                    [filler_task, response_future],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                # If filler timeout happened first, play filler
-                if filler_task in done and response_future in pending:
-                    logger.info("⏱️ LLM taking >300ms, playing filler", call_sid=session.call_sid)
-                    await self.play_filler_audio(websocket, session)
-
-                # Wait for LLM response
-                response_text, should_end, outcome = await response_future
-
-                llm_duration = time.time() - llm_start_time
-                logger.info(f"⚡ LLM response time: {llm_duration*1000:.0f}ms", call_sid=session.call_sid)
-
-                # Update session
+                # Save outcome to session for later processing
+                session.collected_data["final_outcome"] = outcome
                 await self.session_manager.save_session(session)
 
-                # Add AI response to transcript
-                await self.session_manager.add_to_transcript(
-                    call_sid=session.call_sid,
-                    speaker="ai",
-                    text=response_text
-                )
-
-                # Send response
-                await self.send_tts_to_caller(websocket, response_text, session)
-
-                # End call if needed
-                if should_end:
-                    logger.info(
-                        "Call ending",
-                        call_sid=session.call_sid,
-                        outcome=outcome
-                    )
-
-                    # Save outcome to session for later processing
-                    session.collected_data["final_outcome"] = outcome
-                    await self.session_manager.save_session(session)
-
-                    # Close WebSocket (triggers Exotel to end call)
-                    await websocket.close()
+                # Close WebSocket (triggers Exotel to end call)
+                await websocket.close()
 
             # Clear buffer and reset interruption flag
             session.audio_buffer = b""
