@@ -135,6 +135,9 @@ class ExotelEventHandler:
             lead_context=lead_context
         )
 
+        # ⚡ Start persistent WebSocket connection for STT (LOW LATENCY MODE)
+        await self.stt_service.start_streaming(call_sid)
+
         # Generate intro
         intro_text = await self.conversation_engine.generate_intro(session)
 
@@ -527,6 +530,9 @@ class ExotelEventHandler:
             session: Conversation session
         """
         logger.info("Call stopped", call_sid=session.call_sid)
+
+        # ⚡ Stop persistent WebSocket connection for STT
+        await self.stt_service.stop_streaming(session.call_sid)
 
         # Mark that call ended
         await self.session_manager.update_session(
