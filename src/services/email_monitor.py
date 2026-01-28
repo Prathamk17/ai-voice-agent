@@ -474,20 +474,19 @@ class EmailMonitor:
                 await session.refresh(scheduled_call)
 
                 # Check if it's within calling hours
-                current_hour = datetime.utcnow().hour
+                current_hour = datetime.now(timezone.utc).hour
                 is_within_hours = (
                     settings.CALLING_HOURS_START <= current_hour < settings.CALLING_HOURS_END
                 )
 
-                if is_within_hours and scheduled_time <= datetime.utcnow():
+                if is_within_hours and scheduled_time <= datetime.now(timezone.utc):
                     logger.info(
-                        "✅ Call scheduled for IMMEDIATE execution",
+                        "✅ Call scheduled for IMMEDIATE execution - Background worker will pick this up in the next 30 seconds",
                         lead_id=lead.id,
                         lead_name=lead.name,
                         phone=lead.phone,
                         scheduled_call_id=scheduled_call.id,
-                        scheduled_time=scheduled_time.isoformat(),
-                        message="Background worker will pick this up in the next 30 seconds"
+                        scheduled_time=scheduled_time.isoformat()
                     )
                 else:
                     logger.info(
