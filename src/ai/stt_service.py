@@ -77,8 +77,10 @@ class DeepgramSTTService:
         # Check if persistent connection exists
         if call_sid not in self.active_streams:
             logger.warning(
-                "No persistent connection found - falling back to legacy mode",
-                call_sid=call_sid
+                "⚠️ No persistent connection found - falling back to legacy mode",
+                call_sid=call_sid,
+                active_streams_count=len(self.active_streams),
+                active_call_sids=list(self.active_streams.keys())
             )
             return await self.transcribe_audio_legacy(audio_bytes, call_sid)
 
@@ -92,10 +94,17 @@ class DeepgramSTTService:
             transcript_buffer['final_transcripts'].clear()
 
             # Send audio through persistent connection (NO handshake, NO finish!)
+            logger.debug(
+                "Sending audio to persistent WebSocket",
+                call_sid=call_sid,
+                audio_size=len(audio_bytes)
+            )
+
             dg_connection.send(audio_bytes)
 
             # Wait briefly for Deepgram to process and send back transcripts
-            await asyncio.sleep(0.15)  # 150ms should be enough for response
+            # Increased from 150ms to 300ms for more reliable results
+            await asyncio.sleep(0.3)
 
             duration = time.time() - start_time
 
@@ -113,16 +122,21 @@ class DeepgramSTTService:
                 cleaned_transcript = self._post_process_transcript(result_text)
 
                 logger.info(
-                    "Streaming transcription (persistent WS)",
+                    "✅ Streaming transcription (persistent WS)",
                     call_sid=call_sid,
                     transcript=cleaned_transcript[:100],
                     duration_seconds=round(duration, 3),
-                    latency_improvement="~800ms saved vs legacy"
+                    latency_improvement="~700ms saved vs legacy"
                 )
 
                 return cleaned_transcript
 
             # No final transcript yet (user still speaking or silence)
+            logger.debug(
+                "No final transcript yet from WebSocket",
+                call_sid=call_sid,
+                interim=transcript_buffer.get('last_interim', '')[:50] if transcript_buffer.get('last_interim') else None
+            )
             return None
 
         except Exception as e:
@@ -496,9 +510,17 @@ class DeepgramSTTService:
             )
 
             # Start persistent connection (handshake ONCE)
-            if dg_connection.start(options) is False:
+            # Use to_thread to prevent blocking if this is a sync operation
+            logger.info(
+                "Starting persistent Deepgram connection...",
+                call_sid=call_sid
+            )
+
+            start_result = await asyncio.to_thread(dg_connection.start, options)
+
+            if start_result is False:
                 logger.error(
-                    "Failed to start persistent Deepgram connection",
+                    "❌ Failed to start persistent Deepgram connection (returned False)",
                     call_sid=call_sid
                 )
                 return

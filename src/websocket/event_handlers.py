@@ -135,9 +135,6 @@ class ExotelEventHandler:
             lead_context=lead_context
         )
 
-        # ⚡ Start persistent WebSocket connection for STT (LOW LATENCY MODE)
-        await self.stt_service.start_streaming(call_sid)
-
         # Generate intro
         intro_text = await self.conversation_engine.generate_intro(session)
 
@@ -150,6 +147,17 @@ class ExotelEventHandler:
 
         # Convert to speech and send
         await self.send_tts_to_caller(websocket, intro_text, session)
+
+        # ⚡ Start persistent WebSocket connection for STT AFTER intro (non-blocking)
+        # This happens while user listens to intro, so connection is ready when they speak
+        try:
+            await self.stt_service.start_streaming(call_sid)
+        except Exception as e:
+            logger.error(
+                "Failed to start STT streaming - will use legacy mode",
+                call_sid=call_sid,
+                error=str(e)
+            )
 
         return session
 
