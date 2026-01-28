@@ -8,7 +8,7 @@ Comprehensive health checking for all system components.
 from typing import Dict, Any
 from datetime import datetime
 
-from src.database.connection import redis_client, async_session_maker
+from src.database.connection import redis_client, get_async_session_maker
 from src.integrations.exotel_client import ExotelClient
 from src.utils.logger import StructuredLogger
 
@@ -24,6 +24,7 @@ class HealthChecker:
         """Check database connectivity"""
         try:
             from sqlalchemy import text
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 await session.execute(text("SELECT 1"))
 

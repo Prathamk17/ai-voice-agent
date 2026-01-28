@@ -12,7 +12,7 @@ from typing import Optional, List, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import settings
-from src.database.connection import async_session_maker
+from src.database.connection import get_async_session_maker
 from src.models.email_lead import EmailLead, ParsedEmailResult
 from src.models.lead import Lead, LeadSource
 from src.services.email_parsers import EmailParserFactory
@@ -248,6 +248,49 @@ class EmailMonitor:
         body = email_data['body']
         received_at = email_data['received_at']
 
+        # Skip old emails (more than 7 days old)
+        from datetime import timedelta, timezone
+        now = datetime.now(timezone.utc)
+        email_age = now - received_at
+        if email_age > timedelta(days=7):
+            logger.debug(
+                f"Skipping old email (age: {email_age.days} days)",
+                subject=subject[:100],
+                received_at=received_at
+            )
+            # Mark as processed to avoid checking again
+            self.processed_message_ids.add(message_id)
+            return
+
+        # Skip emails that are clearly not real estate leads
+        skip_keywords = [
+            'linkedin', 'notification', 'weekly digest', 'recently posted',
+            'tradingview', 'cursor', 'new message', 'add connection',
+            'follow', 'event happening', 'register now', 'act fast',
+            'you have 1 new message', 'your turn',
+        ]
+        subject_lower = subject.lower()
+        body_lower = body.lower()
+
+        # Skip if subject or body contains skip keywords and no real estate indicators
+        real_estate_keywords = [
+            'property', 'bhk', 'apartment', 'villa', 'flat', 'real estate',
+            'magicbricks', '99acres', 'housing', 'site visit', 'buyer',
+            'enquiry', 'enquire', 'neco park', 'kharadi', 'pune'
+        ]
+
+        has_skip_keyword = any(kw in subject_lower or kw in body_lower for kw in skip_keywords)
+        has_real_estate_keyword = any(kw in subject_lower or kw in body_lower for kw in real_estate_keywords)
+
+        if has_skip_keyword and not has_real_estate_keyword:
+            logger.debug(
+                f"Skipping non-lead email",
+                subject=subject[:100]
+            )
+            # Mark as processed to avoid checking again
+            self.processed_message_ids.add(message_id)
+            return
+
         logger.info(
             "Processing email",
             subject=subject[:100],
@@ -309,6 +352,7 @@ class EmailMonitor:
             Created Lead or None if failed
         """
         try:
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 # Check if lead with same phone already exists
                 from sqlalchemy import select
@@ -400,6 +444,7 @@ class EmailMonitor:
         )
 
         try:
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 from src.services.call_scheduler import CallScheduler
                 from src.models.scheduled_call import ScheduledCall, ScheduledCallStatus

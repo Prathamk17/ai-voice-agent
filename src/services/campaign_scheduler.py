@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import async_session_maker
+from src.database.connection import get_async_session_maker
 from src.database.repositories import CampaignRepository
 from src.models.campaign import Campaign, CampaignStatus
 from src.utils.logger import get_logger
@@ -79,6 +79,7 @@ class CampaignScheduler:
     async def _check_scheduled_campaigns(self):
         """Check for campaigns that should be started."""
         try:
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 campaign_repo = CampaignRepository(session)
                 current_time = datetime.utcnow()
@@ -131,6 +132,7 @@ class CampaignScheduler:
     async def _check_expired_campaigns(self):
         """Check for campaigns that have passed their end time."""
         try:
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 campaign_repo = CampaignRepository(session)
                 current_time = datetime.utcnow()
@@ -194,6 +196,7 @@ class CampaignScheduler:
     async def _update_campaign_metrics(self):
         """Update metrics for active campaigns."""
         try:
+            async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 campaign_repo = CampaignRepository(session)
 
