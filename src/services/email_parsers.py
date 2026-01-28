@@ -192,7 +192,7 @@ class MagicBricksParser(BaseEmailParser):
                 name=name or "Unknown",
                 phone=phone,
                 email=email,
-                property_type=property_type,
+                property_type=property_type or "Property Inquiry",  # Default if not found
                 location=location,
                 budget=budget,
                 source="magicbricks",
@@ -309,7 +309,7 @@ class NinetyNineAcresParser(BaseEmailParser):
                 name=name or "Unknown",
                 phone=phone,
                 email=email,
-                property_type=property_type,
+                property_type=property_type or "Property Inquiry",  # Default if not found
                 location=location,
                 budget=budget,
                 source="99acres",
@@ -443,7 +443,7 @@ class LandingPageParser(BaseEmailParser):
                 name=name or "Unknown",
                 phone=phone,
                 email=email,
-                property_type=property_type,
+                property_type=property_type or "Property Inquiry",  # Default if not found
                 location=location,
                 budget=None,
                 source="website",
@@ -543,13 +543,13 @@ class MetaLeadsParser(BaseEmailParser):
             if requirement_match:
                 requirement = requirement_match.group(1).strip()
 
-                # Extract property type from requirement (e.g., "2_bhk" -> "2 BHK")
-                bhk_match = re.search(r'(\d+)_?bhk', requirement, re.IGNORECASE)
+                # Extract property type from requirement (e.g., "2_bhk" or "2 BHK" -> "2 BHK")
+                bhk_match = re.search(r'(\d+)\s*[_\s-]?\s*bhk', requirement, re.IGNORECASE)
                 if bhk_match:
                     property_type = f"{bhk_match.group(1)} BHK"
 
-                # Extract budget from requirement (e.g., "₹1.09_cr" -> 10900000)
-                budget_match = re.search(r'₹?([\d.]+)\s*(?:cr|crore)', requirement, re.IGNORECASE)
+                # Extract budget from requirement (e.g., "₹1.09_cr" or "₹1.09 cr" -> 10900000)
+                budget_match = re.search(r'₹?\s*([\d.]+)\s*(?:cr|crore)', requirement, re.IGNORECASE)
                 if budget_match:
                     budget = int(float(budget_match.group(1)) * 10000000)
 
@@ -598,7 +598,7 @@ class MetaLeadsParser(BaseEmailParser):
                 name=name or "Unknown",
                 phone=phone,
                 email=email,
-                property_type=property_type,
+                property_type=property_type or "Property Inquiry",  # Default if not found
                 location=location,
                 budget=budget,
                 source="advertisement",  # Meta/Facebook ads
@@ -694,7 +694,7 @@ class GenericLeadParser(BaseEmailParser):
                 name=name or "Unknown",
                 phone=phone,
                 email=email,
-                property_type=property_type,
+                property_type=property_type or "Property Inquiry",  # Default if not found
                 location=location,
                 budget=budget,
                 source="other",

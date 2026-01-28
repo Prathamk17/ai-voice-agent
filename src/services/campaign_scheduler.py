@@ -1,7 +1,7 @@
 """Campaign scheduler service for automated campaign management."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,7 +82,7 @@ class CampaignScheduler:
             async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 campaign_repo = CampaignRepository(session)
-                current_time = datetime.utcnow()
+                current_time = datetime.now(timezone.utc)
 
                 # Get campaigns scheduled to start
                 scheduled_campaigns = await campaign_repo.get_scheduled_campaigns(
@@ -135,7 +135,7 @@ class CampaignScheduler:
             async_session_maker = get_async_session_maker()
             async with async_session_maker() as session:
                 campaign_repo = CampaignRepository(session)
-                current_time = datetime.utcnow()
+                current_time = datetime.now(timezone.utc)
 
                 # Get active running campaigns
                 active_campaigns = await campaign_repo.get_active_campaigns()
@@ -234,7 +234,7 @@ class CampaignScheduler:
         """
         try:
             campaign_repo = CampaignRepository(session)
-            current_time = datetime.utcnow()
+            current_time = datetime.now(timezone.utc)
             current_hour = current_time.hour
 
             # Get running campaigns
