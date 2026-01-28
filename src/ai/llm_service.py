@@ -50,7 +50,8 @@ class LLMService:
         else:
             self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-        self.model = "gpt-4o-mini"
+        # Upgraded to gpt-4o for better conversation quality, nuanced understanding, and context retention
+        self.model = "gpt-4o"
 
     async def generate_streaming_response(
         self,
@@ -89,8 +90,8 @@ class LLMService:
                 {"role": "system", "content": system_prompt}
             ]
 
-            # Add conversation history (last 5 exchanges to keep context manageable)
-            for exchange in conversation_history[-5:]:
+            # Add conversation history (last 8 exchanges for better context retention)
+            for exchange in conversation_history[-8:]:
                 messages.append({
                     "role": "user" if exchange["speaker"] == "user" else "assistant",
                     "content": exchange["text"]
@@ -113,8 +114,8 @@ class LLMService:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.7,
-                max_tokens=150,  # Keep responses concise for voice
+                temperature=0.8,  # Increased from 0.7 for more natural, human-like variety
+                max_tokens=200,  # Increased from 150 to allow slightly longer natural responses
                 stream=True,  # Enable streaming
                 response_format={"type": "json_object"}  # Enforce JSON output
             )
@@ -216,8 +217,8 @@ class LLMService:
                 {"role": "system", "content": system_prompt}
             ]
 
-            # Add conversation history (last 5 exchanges to keep context manageable)
-            for exchange in conversation_history[-5:]:
+            # Add conversation history (last 8 exchanges for better context retention)
+            for exchange in conversation_history[-8:]:
                 messages.append({
                     "role": "user" if exchange["speaker"] == "user" else "assistant",
                     "content": exchange["text"]

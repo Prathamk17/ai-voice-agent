@@ -136,6 +136,20 @@ class DeepgramSTTService:
             dg_connection.on(LiveTranscriptionEvents.Error, on_error)
 
             # Configure streaming options with optimized settings
+            # Indian location keywords for better recognition
+            location_keywords = [
+                "Kharadi", "Pune", "Whitefield", "HSR Layout", "Koramangala",
+                "Bandra", "Mumbai", "Gurgaon", "Noida", "Bangalore", "Bengaluru",
+                "Hyderabad", "Chennai", "Jaipur", "Jhotwara", "Vaishali Nagar",
+                "Hinjewadi", "Wakad", "Viman Nagar", "Aundh", "Baner"
+            ]
+
+            # Real estate specific keywords
+            re_keywords = [
+                "BHK", "2BHK", "3BHK", "4BHK", "registry", "patta", "possession",
+                "ready to move", "under construction", "Vastu", "lakh", "crore"
+            ]
+
             options = LiveOptions(
                 model="nova-2-phonecall",  # Optimized for phone calls (changed from nova-2)
                 language="en-IN",  # Indian English
@@ -145,7 +159,8 @@ class DeepgramSTTService:
                 punctuate=True,
                 encoding="linear16",
                 sample_rate=8000,
-                channels=1
+                channels=1,
+                keywords=location_keywords + re_keywords  # Boost Indian location and RE terms
             )
 
             # Start connection
@@ -222,12 +237,27 @@ class DeepgramSTTService:
 
             # Use Deepgram SDK v5.3+ API
             # Transcribe using listen.v1.media.transcribe_file()
+            # Indian location keywords for better recognition
+            location_keywords = [
+                "Kharadi", "Pune", "Whitefield", "HSR Layout", "Koramangala",
+                "Bandra", "Mumbai", "Gurgaon", "Noida", "Bangalore", "Bengaluru",
+                "Hyderabad", "Chennai", "Jaipur", "Jhotwara", "Vaishali Nagar",
+                "Hinjewadi", "Wakad", "Viman Nagar", "Aundh", "Baner"
+            ]
+
+            # Real estate specific keywords
+            re_keywords = [
+                "BHK", "2BHK", "3BHK", "4BHK", "registry", "patta", "possession",
+                "ready to move", "under construction", "Vastu", "lakh", "crore"
+            ]
+
             response = self.dg_client.listen.v1.media.transcribe_file(
                 request=wav_audio,
                 model="nova-2-phonecall",  # Changed from nova-2
                 language="en-IN",
                 punctuate=True,
                 smart_format=True,
+                keywords=location_keywords + re_keywords  # Boost Indian location and RE terms
             )
 
             duration = time.time() - start_time

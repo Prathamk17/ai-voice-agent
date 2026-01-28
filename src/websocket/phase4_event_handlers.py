@@ -44,8 +44,8 @@ class Phase4EventHandler(Phase3EventHandler):
         # OPTIMIZATION: VAD threshold tuned for Exotel phone audio
         # Baseline noise: RMS ~8 (should be ignored)
         # Actual speech: RMS 50-5000+ (should be detected)
-        self.SPEECH_THRESHOLD = 30  # Set to 30 to filter baseline noise but capture speech
-        self.SILENCE_CHUNKS_REQUIRED = 15  # Reduced from 20 for faster response (300ms silence)
+        self.SPEECH_THRESHOLD = 25  # Lowered from 30 for better interruption detection
+        self.SILENCE_CHUNKS_REQUIRED = 10  # Reduced from 15 for <800ms latency (200ms silence detection)
 
     async def handle_start(
         self,

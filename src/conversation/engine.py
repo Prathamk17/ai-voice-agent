@@ -137,10 +137,10 @@ class ConversationEngine:
         Returns:
             Intro message
         """
-        # Use simple template (can be LLM-generated for variety if needed)
+        # Use simple template with permission check (like the audio sample)
         lead_name = session.lead_name
         property_type = session.property_type or "property"
         location = session.location or "your preferred area"
 
-        # Quick casual intro
-        return f"Hi {lead_name}, this is Alex from PropertyHub. Hope I'm not catching you at a bad time? I saw you were looking at {property_type} in {location}. Got a couple minutes to chat?"
+        # Permission-based intro following structured call flow
+        return f"Hi {lead_name}, this is Alex from PropertyHub. I saw you inquired about {property_type} in {location}. Is this a good time to talk for 2 minutes?"
