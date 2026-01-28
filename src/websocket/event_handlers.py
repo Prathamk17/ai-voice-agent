@@ -231,9 +231,9 @@ class ExotelEventHandler:
             session.silence_chunks += 1
 
         # Only transcribe when we have enough audio AND detect silence (speech ended)
-        # Min 0.5s of audio + 600ms of silence (to ensure sentence is complete)
+        # Min 0.5s of audio + 400ms of silence (faster response, reduced from 600ms)
         min_audio_bytes = 8000  # 0.5 seconds
-        silence_threshold = 10  # ~600ms of silence (assuming 60ms chunks)
+        silence_threshold = 7  # ~400ms of silence (7 chunks × ~60ms each)
 
         if len(session.audio_buffer) >= min_audio_bytes and session.silence_chunks >= silence_threshold:
             logger.info(
@@ -246,19 +246,44 @@ class ExotelEventHandler:
                 call_sid=session.call_sid
             )
 
-            if transcript:
-                logger.info(
-                    "User spoke",
+            if not transcript:
+                # 🚨 TRANSCRIPT EMPTY: Low confidence or failed transcription
+                logger.warning(
+                    "❌ EMPTY TRANSCRIPT: Asking user to repeat",
                     call_sid=session.call_sid,
-                    transcript=transcript
+                    buffer_size=len(session.audio_buffer)
                 )
 
-                # Add to transcript
-                await self.session_manager.add_to_transcript(
-                    call_sid=session.call_sid,
-                    speaker="user",
-                    text=transcript
-                )
+                # Ask user to repeat (don't add to transcript history)
+                clarification_messages = [
+                    "Sorry, I didn't catch that. Could you repeat?",
+                    "Sorry, could you say that again?",
+                    "Sorry, I missed that. Can you repeat?"
+                ]
+                import random
+                clarification = random.choice(clarification_messages)
+
+                await self.send_tts_to_caller(websocket, clarification, session)
+
+                # Clear buffer and continue listening
+                session.audio_buffer = b""
+                session.silence_chunks = 0
+                await self.session_manager.save_session(session)
+                return
+
+            # Valid transcript received
+            logger.info(
+                "User spoke",
+                call_sid=session.call_sid,
+                transcript=transcript
+            )
+
+            # Add to transcript
+            await self.session_manager.add_to_transcript(
+                call_sid=session.call_sid,
+                speaker="user",
+                text=transcript
+            )
 
                 # LATENCY MASKING: Play filler if LLM takes >300ms
                 import asyncio

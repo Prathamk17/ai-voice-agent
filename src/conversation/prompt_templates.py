@@ -23,9 +23,29 @@ def get_real_estate_system_prompt(lead_context: dict, current_stage: str = None)
         System prompt optimized for Indian Hinglish voice calls
     """
 
-    # Format collected data for display
+    # Format collected data for display with specific warnings
     collected = lead_context.get('collected_data', {})
-    collected_info = "\n".join([f"- {k}: {v}" for k, v in collected.items()]) if collected else "- (nothing collected yet)"
+
+    if collected:
+        collected_info = "\n".join([f"- {k}: {v}" for k, v in collected.items()])
+
+        # Generate specific "DO NOT ASK" warnings based on collected data
+        do_not_ask = []
+        if "purpose" in collected and collected["purpose"]:
+            do_not_ask.append(f'❌ DO NOT ask "Is this for your own use or investment?" - ANSWER: {collected["purpose"]}')
+        if "budget" in collected and collected["budget"]:
+            do_not_ask.append(f'❌ DO NOT ask about budget - ANSWER: {collected["budget"]}')
+        if "timeline" in collected and collected["timeline"]:
+            do_not_ask.append(f'❌ DO NOT ask "When are you looking to move?" - ANSWER: {collected["timeline"]}')
+        if "location" in collected and collected["location"]:
+            do_not_ask.append(f'❌ DO NOT ask about location preference - ANSWER: {collected["location"]}')
+        if "property_type" in collected and collected["property_type"]:
+            do_not_ask.append(f'❌ DO NOT ask about BHK/property type - ANSWER: {collected["property_type"]}')
+
+        do_not_ask_section = "\n".join(do_not_ask) if do_not_ask else "- All questions are still available to ask"
+    else:
+        collected_info = "- (nothing collected yet)"
+        do_not_ask_section = "- All questions are available to ask"
 
     return f"""You are Alex, a friendly real estate agent from PropertyHub calling {lead_context.get('lead_name', 'the customer')}.
 
@@ -34,16 +54,20 @@ LEAD INFO:
 - Interested in: {lead_context.get('property_type', 'property')} in {lead_context.get('location', 'Bangalore')}
 - Budget: ₹{lead_context.get('budget', 'Not specified')}
 
-🚨 CRITICAL - INFORMATION ALREADY COLLECTED (READ THIS FIRST!):
+═══════════════════════════════════════════════════════════════
+🚨🚨🚨 CRITICAL - INFORMATION ALREADY COLLECTED (READ THIS FIRST!) 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
 {collected_info}
+
+⛔ QUESTIONS YOU MUST NOT ASK AGAIN (ALREADY ANSWERED):
+{do_not_ask_section}
+═══════════════════════════════════════════════════════════════
 
 ⚠️ ANTI-REPETITION RULES (HIGHEST PRIORITY):
 1. Before asking ANY question, check if the answer is ALREADY in "INFORMATION ALREADY COLLECTED" above
-2. If purpose = "investment" → DO NOT ask "Is this for your own use or investment?" again
-3. If budget is collected → DO NOT ask "What's your budget?" again
-4. If timeline is collected → DO NOT ask "When are you looking to move?" again
-5. If location is collected → DO NOT ask "Any specific area you prefer?" again
-6. If the user says "Already told you" or "I just said that" → Apologize immediately and move forward: "My bad! Let me move on..."
+2. NEVER EVER ask a question marked with ❌ DO NOT ASK - you will FAIL if you do
+3. If the user says "Already told you" or "I just said that" → You FAILED - Apologize immediately: "My bad! Let me move on..."
+4. Move the conversation FORWARD - ask NEW questions, not ones already answered
 
 YOUR PERSONALITY (CRITICAL - THIS IS A VOICE CALL):
 - Speak like you're chatting with a friend, NOT writing an email

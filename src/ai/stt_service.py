@@ -276,7 +276,22 @@ class DeepgramSTTService:
                 response.results.channels[0].alternatives and
                 len(response.results.channels[0].alternatives) > 0):
 
-                transcript = response.results.channels[0].alternatives[0].transcript
+                alternative = response.results.channels[0].alternatives[0]
+                transcript = alternative.transcript
+
+                # 🚨 CONFIDENCE FILTERING: Reject low-confidence transcriptions
+                confidence = getattr(alternative, 'confidence', 0.0)
+                MIN_CONFIDENCE = 0.65  # 65% minimum confidence (lowered from 75% for phone calls)
+
+                if confidence > 0 and confidence < MIN_CONFIDENCE:
+                    logger.warning(
+                        "❌ LOW CONFIDENCE TRANSCRIPT REJECTED",
+                        call_sid=call_sid,
+                        confidence=f"{confidence*100:.1f}%",
+                        transcript=transcript[:50],
+                        reason="Below minimum threshold"
+                    )
+                    return None
 
                 if transcript and transcript.strip():
                     # Post-process to fix common transcription errors
@@ -286,6 +301,7 @@ class DeepgramSTTService:
                         "Legacy transcription complete",
                         call_sid=call_sid,
                         transcript=cleaned_transcript[:100],
+                        confidence=f"{confidence*100:.1f}%" if confidence > 0 else "N/A",
                         duration_seconds=round(duration, 3)
                     )
 
