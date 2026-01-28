@@ -279,13 +279,26 @@ class DeepgramSTTService:
                 transcript = response.results.channels[0].alternatives[0].transcript
 
                 if transcript and transcript.strip():
+                    # Post-process to fix common transcription errors
+                    cleaned_transcript = self._post_process_transcript(transcript)
+
                     logger.info(
                         "Legacy transcription complete",
                         call_sid=call_sid,
-                        transcript=transcript[:100],
+                        transcript=cleaned_transcript[:100],
                         duration_seconds=round(duration, 3)
                     )
-                    return transcript.strip()
+
+                    # Log if we made corrections
+                    if cleaned_transcript != transcript:
+                        logger.info(
+                            "Applied STT corrections",
+                            call_sid=call_sid,
+                            original=transcript[:50],
+                            corrected=cleaned_transcript[:50]
+                        )
+
+                    return cleaned_transcript.strip()
 
             return None
 
@@ -349,3 +362,47 @@ class DeepgramSTTService:
         )
 
         return header + pcm_data
+
+    @staticmethod
+    def _post_process_transcript(transcript: str) -> str:
+        """
+        Post-process transcript to fix common STT errors from phone audio
+
+        Args:
+            transcript: Raw transcript from Deepgram
+
+        Returns:
+            Cleaned transcript with common errors fixed
+        """
+        if not transcript:
+            return transcript
+
+        # Common phrase corrections (case-insensitive)
+        corrections = {
+            # Common misheard phrases
+            r"\bjust exploding\b": "just exploring",
+            r"\bexploding\b": "exploring",
+            r"\bget i am\b": "yeah I am",
+            r"\balex it'?s been running\b": "okay",
+            r"\bwhat am i [a-z]+ to do\b": "what am I going to do",
+
+            # Remove filler artifacts
+            r"\b(um|uh|er|ah)\b": "",
+
+            # Fix common real estate terms
+            r"\bbhk\b": "BHK",
+            r"\blac\b": "lakh",
+            r"\blakh?s?\b": "lakhs",
+            r"\bcrores?\b": "crore",
+
+            # Clean up multiple spaces
+            r"\s+": " ",
+        }
+
+        import re
+        cleaned = transcript
+
+        for pattern, replacement in corrections.items():
+            cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+
+        return cleaned.strip()

@@ -76,6 +76,7 @@ class ConversationEngine:
                 "property_type": session.property_type,
                 "location": session.location,
                 "budget": session.budget,
+                "collected_data": session.collected_data  # Pass collected_data to help LLM
             },
             system_prompt=system_prompt
         )
@@ -86,6 +87,40 @@ class ConversationEngine:
         intent = llm_result["intent"]
         next_action = llm_result["next_action"]
         extracted_data = llm_result.get("extracted_data", {})
+
+        # ANTI-REPETITION VALIDATION: Check if LLM is asking about already-collected data
+        response_lower = response_text.lower()
+        if session.collected_data:
+            # Check for repetitive questions
+            if "purpose" in session.collected_data and session.collected_data["purpose"]:
+                if "own use or investment" in response_lower or "self-use or investment" in response_lower:
+                    logger.warning(
+                        "🚨 REPETITION DETECTED: Asking about purpose when already collected",
+                        call_sid=session.call_sid,
+                        collected_purpose=session.collected_data["purpose"]
+                    )
+                    # Override response to move forward
+                    response_text = "Got it. When are you ideally looking to move - next few months?"
+
+            if "budget" in session.collected_data and session.collected_data["budget"]:
+                if "budget" in response_lower and "?" in response_text:
+                    logger.warning(
+                        "🚨 REPETITION DETECTED: Asking about budget when already collected",
+                        call_sid=session.call_sid,
+                        collected_budget=session.collected_data["budget"]
+                    )
+                    # Override response to move forward
+                    response_text = "Perfect! When are you looking to move in - next few months or flexible?"
+
+            if "timeline" in session.collected_data and session.collected_data["timeline"]:
+                if "when" in response_lower and "move" in response_lower and "?" in response_text:
+                    logger.warning(
+                        "🚨 REPETITION DETECTED: Asking about timeline when already collected",
+                        call_sid=session.call_sid,
+                        collected_timeline=session.collected_data["timeline"]
+                    )
+                    # Override response to move forward
+                    response_text = "Great! Based on what you've told me, I think we have some properties that would be perfect. How about I arrange a site visit this weekend?"
 
         # Update collected data from LLM extraction
         if extracted_data:
