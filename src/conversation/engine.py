@@ -11,6 +11,7 @@ from src.models.conversation import ConversationSession, ConversationStage
 # from src.conversation.state_machine import ConversationStateMachine
 # from src.conversation.response_generator import ResponseGenerator
 from src.ai.llm_service import LLMService
+from src.conversation.input_preprocessor import preprocess_user_input, detect_wrong_name
 from src.utils.logger import StructuredLogger
 
 logger = StructuredLogger(__name__)
@@ -90,6 +91,68 @@ class ConversationEngine:
 
         return False
 
+    def _validate_llm_response(
+        self,
+        llm_result: Dict[str, Any],
+        session: ConversationSession,
+        user_input: str
+    ) -> Dict[str, Any]:
+        """
+        Validate and fix LLM response to prevent errors.
+
+        Args:
+            llm_result: Raw LLM response
+            session: Current conversation session
+            user_input: User's input
+
+        Returns:
+            Validated and potentially corrected LLM response
+        """
+        # Check 1: Ensure response_text exists and is not empty
+        if not llm_result.get("response_text") or not llm_result["response_text"].strip():
+            logger.warning(
+                "⚠️ LLM returned empty response, using fallback",
+                call_sid=session.call_sid
+            )
+            # Provide a generic fallback
+            llm_result["response_text"] = "I'm here! Could you repeat that?"
+            llm_result["should_end_call"] = False
+
+        # Check 2: Prevent premature exits for wrong name
+        from src.conversation.input_preprocessor import detect_wrong_name
+        if detect_wrong_name(user_input) and llm_result.get("should_end_call"):
+            logger.warning(
+                "⚠️ Overriding premature exit due to wrong name",
+                call_sid=session.call_sid
+            )
+            llm_result["should_end_call"] = False
+            # Prepend name correction if not already in response
+            if "alex" not in llm_result["response_text"].lower():
+                llm_result["response_text"] = "I'm Alex, but no worries! " + llm_result["response_text"]
+
+        # Check 3: Prevent exit if customer is still engaged
+        engaged_signals = [
+            "how much", "when", "where", "what", "tell me",
+            "interested", "show me", "visit", "see"
+        ]
+        if llm_result.get("should_end_call") and any(signal in user_input.lower() for signal in engaged_signals):
+            logger.warning(
+                "⚠️ Overriding exit - customer still engaged",
+                call_sid=session.call_sid,
+                user_input=user_input[:50]
+            )
+            llm_result["should_end_call"] = False
+
+        # Check 4: Ensure extracted_data is a dict
+        if "extracted_data" in llm_result and not isinstance(llm_result["extracted_data"], dict):
+            logger.warning(
+                "⚠️ LLM returned invalid extracted_data format",
+                call_sid=session.call_sid
+            )
+            llm_result["extracted_data"] = {}
+
+        return llm_result
+
     async def process_user_input(
         self,
         session: ConversationSession,
@@ -112,7 +175,26 @@ class ConversationEngine:
             input=user_input[:100]
         )
 
-        # Build system prompt
+        # PREPROCESSING: Check for technical questions and wrong name
+        response_prefix, is_technical, is_mid_sentence = preprocess_user_input(user_input)
+
+        if is_technical and response_prefix:
+            # Technical question detected - provide instant response
+            logger.info(
+                "🎯 Technical question detected - instant response",
+                call_sid=session.call_sid,
+                prefix=response_prefix
+            )
+            # Continue to LLM but prepend the technical response
+
+        # Check for wrong name
+        if detect_wrong_name(user_input):
+            logger.info(
+                "⚠️ Wrong name detected - will handle gracefully",
+                call_sid=session.call_sid
+            )
+
+        # Build system prompt with context tracking
         from src.conversation.prompt_templates import get_real_estate_system_prompt
         system_prompt = get_real_estate_system_prompt(
             lead_context={
@@ -120,7 +202,10 @@ class ConversationEngine:
                 "property_type": session.property_type,
                 "location": session.location,
                 "budget": session.budget,
-                "collected_data": session.collected_data
+                "collected_data": session.collected_data,
+                # Pass context tracking for better response understanding
+                "last_agent_question": session.last_agent_question,
+                "last_agent_question_type": session.last_agent_question_type
             }
         )
 
@@ -133,10 +218,15 @@ class ConversationEngine:
                 "property_type": session.property_type,
                 "location": session.location,
                 "budget": session.budget,
-                "collected_data": session.collected_data  # Pass collected_data to help LLM
+                "collected_data": session.collected_data,
+                "last_agent_question": session.last_agent_question,
+                "last_agent_question_type": session.last_agent_question_type
             },
             system_prompt=system_prompt
         )
+
+        # Validate LLM response before processing
+        llm_result = self._validate_llm_response(llm_result, session, user_input)
 
         # Extract response components
         response_text = llm_result["response_text"]
@@ -144,6 +234,15 @@ class ConversationEngine:
         intent = llm_result["intent"]
         next_action = llm_result["next_action"]
         extracted_data = llm_result.get("extracted_data", {})
+
+        # Extract context tracking fields from LLM response
+        last_question_asked = llm_result.get("last_question_asked")
+        question_type = llm_result.get("question_type")
+        customer_mid_sentence = llm_result.get("customer_mid_sentence", False)
+
+        # Prepend technical response if needed
+        if is_technical and response_prefix:
+            response_text = response_prefix + response_text
 
         # 🚨 RECENT REPETITION CHECK: Prevent asking same question twice in a row
         if self._check_recent_repetition(response_text, session.transcript_history):
@@ -265,6 +364,20 @@ class ConversationEngine:
                     new_fields=list(new_data.keys()),
                     all_collected=session.collected_data
                 )
+
+        # Update context tracking fields for next turn
+        if last_question_asked:
+            session.last_agent_question = last_question_asked
+            session.last_agent_question_type = question_type
+            logger.info(
+                "Updated context tracking",
+                call_sid=session.call_sid,
+                question=last_question_asked,
+                question_type=question_type
+            )
+
+        # Update mid-sentence flag
+        session.customer_mid_sentence = customer_mid_sentence or is_mid_sentence
 
         # Determine outcome for call tracking
         call_outcome = None

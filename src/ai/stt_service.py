@@ -239,9 +239,9 @@ class DeepgramSTTService:
                 sample_rate=8000,
                 channels=1,
                 interim_results=True,
-                # Endpointing: Increase to prevent cutting off mid-sentence
-                # Default is 10ms - increasing to 1000ms (1 second) gives customer time to think
-                endpointing=1000,  # Wait 1s of silence before finalizing transcript
+                # Endpointing: Balanced setting to prevent cutting off while maintaining low latency
+                # 300ms allows natural pauses without excessive delay
+                endpointing=300,  # Wait 300ms of silence before finalizing transcript
                 vad_events=True  # Get voice activity detection events
             )
 
@@ -524,9 +524,9 @@ class DeepgramSTTService:
                 sample_rate=8000,
                 channels=1,
                 interim_results=True,
-                # Endpointing: Increase to prevent cutting off mid-sentence
-                # Default is 10ms - increasing to 1000ms (1 second) gives customer time to think
-                endpointing=1000,  # Wait 1s of silence before finalizing transcript
+                # Endpointing: Balanced setting to prevent cutting off while maintaining low latency
+                # 300ms allows natural pauses without excessive delay
+                endpointing=300,  # Wait 300ms of silence before finalizing transcript
                 vad_events=True  # Get voice activity detection events
             )
 

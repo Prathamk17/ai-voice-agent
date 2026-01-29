@@ -10,6 +10,7 @@ import json
 from sqlalchemy import select
 
 from src.websocket.session_manager import SessionManager
+from src.websocket.interruption_manager import InterruptionManager
 from src.conversation.engine import ConversationEngine
 from src.ai.stt_service import DeepgramSTTService
 from src.ai.tts_service import ElevenLabsTTSService
@@ -209,9 +210,10 @@ class ExotelEventHandler:
                     call_sid=session.call_sid,
                     buffer_size=len(audio_bytes)
                 )
-                # Stop bot from speaking and save immediately to Redis
+                # Stop bot from speaking - use in-memory flag for fast response
                 session.is_bot_speaking = False
                 session.should_stop_speaking = True
+                InterruptionManager.set_interrupted(session.call_sid)
                 await self.session_manager.save_session(session)
                 # Clear buffer and continue to process user's interruption
                 session.audio_buffer = b""
@@ -358,9 +360,10 @@ class ExotelEventHandler:
                 # Close WebSocket (triggers Exotel to end call)
                 await websocket.close()
 
-            # Clear buffer and reset interruption flag
+            # Clear buffer and reset interruption flags (both in-memory and session)
             session.audio_buffer = b""
             session.should_stop_speaking = False
+            InterruptionManager.clear_interrupted(session.call_sid)
             session.silence_chunks = 0  # Reset silence tracking
             await self.session_manager.save_session(session)
 
@@ -383,9 +386,9 @@ class ExotelEventHandler:
             samples = struct.unpack(f"{len(audio_bytes)//2}h", audio_bytes)
             rms = (sum(s**2 for s in samples) / len(samples)) ** 0.5
 
-            # Threshold for voice detection (adjust based on testing)
-            # 8kHz 16-bit audio typically has RMS > 500 for speech
-            VOICE_THRESHOLD = 500
+            # Threshold for voice detection (adjusted for better interruption sensitivity)
+            # Lowered to 300 to catch softer interruptions like "excuse me", "hello"
+            VOICE_THRESHOLD = 300
 
             is_voice = rms > VOICE_THRESHOLD
 
@@ -430,9 +433,8 @@ class ExotelEventHandler:
             chunks = self.audio_processor.chunk_audio(filler_pcm, chunk_duration_ms=20)
 
             for chunk in chunks:
-                # Check if interrupted
-                fresh_session = await self.session_manager.get_session(session.call_sid)
-                if fresh_session and fresh_session.should_stop_speaking:
+                # Check if interrupted using in-memory flag (faster)
+                if InterruptionManager.check_interrupted(session.call_sid):
                     break
 
                 base64_chunk = self.audio_processor.encode_for_exotel(chunk)
@@ -632,10 +634,11 @@ class ExotelEventHandler:
             session: Conversation session
         """
 
-        # Mark bot as speaking
+        # Mark bot as speaking and clear any previous interruption flags
         session.is_bot_speaking = True
         session.waiting_for_response = False
         session.should_stop_speaking = False
+        InterruptionManager.clear_interrupted(session.call_sid)
         await self.session_manager.save_session(session)
 
         try:
@@ -651,18 +654,16 @@ class ExotelEventHandler:
             # Send chunks with IMMEDIATE interruption support
             chunks_sent = 0
             for i, chunk in enumerate(chunks):
-                # Check EVERY 3 chunks for immediate barge-in response (~60ms latency)
-                # (every 1 chunk would be too aggressive with Redis overhead)
-                if i % 3 == 0:
-                    fresh_session = await self.session_manager.get_session(session.call_sid)
-                    if fresh_session and fresh_session.should_stop_speaking:
-                        logger.info(
-                            "🛑 TTS interrupted by user (immediate barge-in)",
-                            call_sid=session.call_sid,
-                            chunks_sent=chunks_sent,
-                            total_chunks=len(chunks)
-                        )
-                        break
+                # Check EVERY chunk for immediate barge-in response (<1ms latency with in-memory)
+                # Now using in-memory flags instead of Redis, so we can check more frequently
+                if InterruptionManager.check_interrupted(session.call_sid):
+                    logger.info(
+                        "🛑 TTS interrupted by user (immediate barge-in)",
+                        call_sid=session.call_sid,
+                        chunks_sent=chunks_sent,
+                        total_chunks=len(chunks)
+                    )
+                    break
 
                 base64_chunk = self.audio_processor.encode_for_exotel(chunk)
 
