@@ -420,24 +420,39 @@ class DeepgramSTTService:
         Args:
             call_sid: Call session ID
         """
+        logger.info(
+            "🔵 START: Entering start_streaming() method",
+            call_sid=call_sid,
+            has_dg_client=bool(self.dg_client),
+            existing_streams=list(self.active_streams.keys())
+        )
+
         if not self.dg_client:
-            logger.error("Deepgram client not initialized", call_sid=call_sid)
+            logger.error("❌ EARLY EXIT: Deepgram client not initialized", call_sid=call_sid)
             return
 
         if call_sid in self.active_streams:
-            logger.warning("Stream already exists for this call", call_sid=call_sid)
+            logger.warning("❌ EARLY EXIT: Stream already exists for this call", call_sid=call_sid)
             return
 
         try:
             # Import Deepgram WebSocket classes
+            logger.info("🔵 Attempting to import Deepgram WebSocket classes", call_sid=call_sid)
             try:
                 from deepgram import LiveTranscriptionEvents, LiveOptions
-            except ImportError:
-                logger.error("Deepgram WebSocket not available", call_sid=call_sid)
+                logger.info("✅ Successfully imported Deepgram classes", call_sid=call_sid)
+            except ImportError as import_err:
+                logger.error(
+                    "❌ EARLY EXIT: Deepgram WebSocket not available",
+                    call_sid=call_sid,
+                    error=str(import_err)
+                )
                 return
 
             # Create persistent WebSocket connection
+            logger.info("🔵 Creating Deepgram WebSocket connection object", call_sid=call_sid)
             dg_connection = self.dg_client.listen.live.v("1")
+            logger.info("✅ Deepgram WebSocket connection object created", call_sid=call_sid)
 
             # Store transcripts for this call
             transcript_buffer = {
@@ -512,20 +527,29 @@ class DeepgramSTTService:
             # Start persistent connection (handshake ONCE)
             # Use to_thread to prevent blocking if this is a sync operation
             logger.info(
-                "Starting persistent Deepgram connection...",
-                call_sid=call_sid
+                "🔵 About to call dg_connection.start() with options",
+                call_sid=call_sid,
+                options_model=options.model if options else None
             )
 
             start_result = await asyncio.to_thread(dg_connection.start, options)
 
+            logger.info(
+                "🔵 dg_connection.start() returned",
+                call_sid=call_sid,
+                start_result=start_result,
+                start_result_type=type(start_result).__name__
+            )
+
             if start_result is False:
                 logger.error(
-                    "❌ Failed to start persistent Deepgram connection (returned False)",
+                    "❌ EARLY EXIT: Failed to start persistent Deepgram connection (returned False)",
                     call_sid=call_sid
                 )
                 return
 
             # Store connection and transcript buffer
+            logger.info("🔵 About to store connection in active_streams", call_sid=call_sid)
             self.active_streams[call_sid] = {
                 'connection': dg_connection,
                 'transcript_buffer': transcript_buffer,
@@ -533,7 +557,7 @@ class DeepgramSTTService:
             }
 
             logger.info(
-                "✅ Persistent WebSocket connection established (LOW LATENCY MODE)",
+                "✅ SUCCESS: Persistent WebSocket connection established (LOW LATENCY MODE)",
                 call_sid=call_sid,
                 model="nova-3",
                 active_streams_count=len(self.active_streams),
@@ -543,11 +567,15 @@ class DeepgramSTTService:
         except Exception as e:
             import traceback
             logger.error(
-                "Failed to start streaming",
+                "❌ EXCEPTION: Failed to start streaming - caught exception",
                 call_sid=call_sid,
                 error=str(e),
+                error_type=type(e).__name__,
                 traceback=traceback.format_exc()
             )
+            # Ensure we don't leave partial state
+            if call_sid in self.active_streams:
+                del self.active_streams[call_sid]
 
     async def stop_streaming(self, call_sid: str):
         """
