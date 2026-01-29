@@ -229,17 +229,16 @@ class DeepgramSTTService:
                 "ready to move", "under construction", "Vastu", "lakh", "crore"
             ]
 
+            # Use only parameters supported by Deepgram SDK v3.x
             options = LiveOptions(
-                model="nova-2-phonecall",  # Optimized for phone calls (changed from nova-2)
+                model="nova-2",  # Use nova-2 for compatibility
                 language="en-IN",  # Indian English
-                interim_results=True,  # Enable interim transcripts
-                endpointing=300,  # 300ms silence detection (was missing)
-                smart_format=True,  # Smart formatting
                 punctuate=True,
+                smart_format=True,
                 encoding="linear16",
                 sample_rate=8000,
                 channels=1,
-                keywords=location_keywords + re_keywords  # Boost Indian location and RE terms
+                interim_results=True
             )
 
             # Start connection
