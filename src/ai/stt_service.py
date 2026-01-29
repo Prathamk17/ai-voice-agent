@@ -510,17 +510,17 @@ class DeepgramSTTService:
                 "ready to move", "under construction", "Vastu", "lakh", "crore"
             ]
 
+            # Use only parameters supported by Deepgram SDK v3.x
+            # Note: keywords parameter may not be supported for live streaming in v3.x
             options = LiveOptions(
-                model="nova-3",  # ⚡ UPGRADED: Latest model, better Hinglish + faster
-                language="en-IN",  # Indian English (hardcoded for speed)
-                interim_results=True,  # Enable real-time interim transcripts
-                endpointing=300,  # 300ms silence detection
-                smart_format=True,
+                model="nova-2",  # Use nova-2 (nova-3 may not be available in v3.x)
+                language="en-IN",  # Indian English
                 punctuate=True,
+                smart_format=True,
                 encoding="linear16",
                 sample_rate=8000,
                 channels=1,
-                keywords=location_keywords + re_keywords
+                interim_results=True
             )
 
             # Start persistent connection (handshake ONCE)
