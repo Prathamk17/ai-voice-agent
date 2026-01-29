@@ -111,11 +111,34 @@ class ConversationEngine:
         # Check 1: Ensure response_text exists and is not empty
         if not llm_result.get("response_text") or not llm_result["response_text"].strip():
             logger.warning(
-                "⚠️ LLM returned empty response, using fallback",
-                call_sid=session.call_sid
+                "⚠️ LLM returned empty response, using context-aware fallback",
+                call_sid=session.call_sid,
+                user_input=user_input[:100],  # Log what customer said
+                last_agent_question=session.last_agent_question,  # Log what we asked
+                collected_data=session.collected_data,
+                raw_llm_result=str(llm_result)[:200]  # Log raw LLM output for debugging
             )
-            # Provide a generic fallback
-            llm_result["response_text"] = "I'm here! Could you repeat that?"
+            # Use context-aware fallback based on what's missing
+            collected = session.collected_data
+
+            if not collected.get("purpose"):
+                llm_result["response_text"] = "Great! Is this for your own use or investment?"
+                llm_result["last_question_asked"] = "Is this for your own use or investment?"
+                llm_result["question_type"] = "purpose"
+            elif not collected.get("budget"):
+                llm_result["response_text"] = "Accha! What's your comfortable budget range?"
+                llm_result["last_question_asked"] = "What's your comfortable budget range?"
+                llm_result["question_type"] = "budget"
+            elif not collected.get("timeline"):
+                llm_result["response_text"] = "Perfect! When are you looking to move in?"
+                llm_result["last_question_asked"] = "When are you looking to move in?"
+                llm_result["question_type"] = "timeline"
+            else:
+                # All info collected, suggest site visit
+                llm_result["response_text"] = "Thik hai! How about a site visit this Saturday 11am or Sunday 4pm?"
+                llm_result["last_question_asked"] = "How about a site visit this Saturday 11am or Sunday 4pm?"
+                llm_result["question_type"] = "site_visit"
+
             llm_result["should_end_call"] = False
 
         # Check 2: Prevent premature exits for wrong name
