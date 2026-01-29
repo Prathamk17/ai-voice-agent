@@ -314,8 +314,8 @@ class DeepgramSTTService:
             # Convert raw PCM to WAV format with header (so Deepgram knows sample rate)
             wav_audio = self._add_wav_header(audio_bytes, sample_rate=8000, channels=1, bits_per_sample=16)
 
-            # Use Deepgram SDK v5.3+ API
-            # Transcribe using listen.v1.media.transcribe_file()
+            # Use Deepgram SDK v3.x API
+            # Transcribe using listen.prerecorded.v("1").transcribe_file()
             # Indian location keywords for better recognition
             location_keywords = [
                 "Kharadi", "Pune", "Whitefield", "HSR Layout", "Koramangala",
@@ -330,7 +330,7 @@ class DeepgramSTTService:
                 "ready to move", "under construction", "Vastu", "lakh", "crore"
             ]
 
-            response = self.dg_client.listen.v1.media.transcribe_file(
+            response = self.dg_client.listen.prerecorded.v("1").transcribe_file(
                 request=wav_audio,
                 model="nova-3",  # ⚡ UPGRADED: Latest model for better Hinglish
                 language="en-IN",
@@ -535,14 +535,18 @@ class DeepgramSTTService:
             logger.info(
                 "✅ Persistent WebSocket connection established (LOW LATENCY MODE)",
                 call_sid=call_sid,
-                model="nova-3"
+                model="nova-3",
+                active_streams_count=len(self.active_streams),
+                stored_call_sids=list(self.active_streams.keys())
             )
 
         except Exception as e:
+            import traceback
             logger.error(
                 "Failed to start streaming",
                 call_sid=call_sid,
-                error=str(e)
+                error=str(e),
+                traceback=traceback.format_exc()
             )
 
     async def stop_streaming(self, call_sid: str):
