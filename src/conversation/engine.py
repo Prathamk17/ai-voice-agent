@@ -305,5 +305,5 @@ class ConversationEngine:
         property_type = session.property_type or "property"
         location = session.location or "your preferred area"
 
-        # Permission-based intro following structured call flow
-        return f"Hi {lead_name}, this is Alex from PropertyHub. I saw you inquired about {property_type} in {location}. Is this a good time to talk for 2 minutes?"
+        # Permission-based intro - optimized for voice (short and natural)
+        return f"Hi {lead_name}, Alex from PropertyHub. You inquired about {property_type} in {location}. Is this a good time?"

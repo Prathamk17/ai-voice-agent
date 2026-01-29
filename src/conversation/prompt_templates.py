@@ -132,7 +132,7 @@ def get_intro_template(
     budget: str
 ) -> str:
     """
-    Template for initial greeting
+    Template for initial greeting (optimized for voice - short and punchy)
 
     Args:
         lead_name: Lead's name
@@ -141,13 +141,9 @@ def get_intro_template(
         budget: Budget range
 
     Returns:
-        Intro message
+        Intro message (8-10 seconds max for TTS)
     """
-    return f"""Hi {lead_name}, this is Alex calling from PropertyHub. I hope I'm not catching you at a bad time.
-
-I saw you were interested in {property_type} properties in {location} around {budget}. I actually have some options that might be perfect for you.
-
-Do you have about 2 minutes to chat?"""
+    return f"Hi {lead_name}, Alex from PropertyHub. You inquired about {property_type} in {location}. Is this a good time?"
 
 
 def get_objection_response_template(objection_type: str) -> str:
