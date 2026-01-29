@@ -37,7 +37,7 @@ numpy>=1.26.3
 ffmpeg-python>=0.2.0
 
 # AI Services
-deepgram-sdk>=3.2.0
+deepgram-sdk>=3.2.0,<4.0.0  # Lock to v3.x (v4+ has breaking API changes)
 elevenlabs>=0.2.27
 openai>=1.7.2
 
