@@ -557,7 +557,7 @@ class DeepgramSTTService:
             logger.info(
                 "✅ SUCCESS: Persistent WebSocket connection established (LOW LATENCY MODE)",
                 call_sid=call_sid,
-                model="nova-3",
+                model="nova-2",
                 active_streams_count=len(self.active_streams),
                 stored_call_sids=list(self.active_streams.keys())
             )
@@ -606,6 +606,64 @@ class DeepgramSTTService:
                 call_sid=call_sid,
                 error=str(e)
             )
+
+    def get_transcript(self, call_sid: str) -> Optional[str]:
+        """
+        Retrieve accumulated transcript from persistent WebSocket connection.
+
+        This is called when speech ends (silence detected) to get all the
+        final transcripts that Deepgram has sent via the WebSocket.
+
+        Args:
+            call_sid: Call session ID
+
+        Returns:
+            Concatenated final transcript, or None if no transcript available
+        """
+        if call_sid not in self.active_streams:
+            logger.warning(
+                "Cannot get transcript - no persistent connection",
+                call_sid=call_sid
+            )
+            return None
+
+        try:
+            stream_data = self.active_streams[call_sid]
+            transcript_buffer = stream_data['transcript_buffer']
+
+            # Get all final transcripts and combine
+            final_transcripts = transcript_buffer['final_transcripts']
+
+            if not final_transcripts:
+                logger.debug(
+                    "No final transcripts available yet",
+                    call_sid=call_sid,
+                    interim=transcript_buffer['last_interim']
+                )
+                return None
+
+            # Combine all final transcripts
+            full_transcript = " ".join(final_transcripts).strip()
+
+            # Clear the buffer for next utterance
+            transcript_buffer['final_transcripts'] = []
+            transcript_buffer['last_interim'] = None
+
+            logger.info(
+                "Retrieved transcript from persistent connection",
+                call_sid=call_sid,
+                transcript=full_transcript[:100]
+            )
+
+            return full_transcript
+
+        except Exception as e:
+            logger.error(
+                "Failed to get transcript from persistent stream",
+                call_sid=call_sid,
+                error=str(e)
+            )
+            return None
 
     async def stop_streaming(self, call_sid: str):
         """

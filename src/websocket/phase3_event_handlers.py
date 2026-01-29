@@ -219,6 +219,10 @@ class Phase3EventHandler:
             # Voice Activity Detection (VAD) Logic
             is_speech_chunk = rms > self.SPEECH_THRESHOLD
 
+            # ALWAYS send audio to persistent WebSocket to keep connection alive
+            # This prevents Deepgram timeout (10 second inactivity limit)
+            await self.stt_service.send_audio_chunk(call_sid, audio_bytes)
+
             if is_speech_chunk:
                 # Speech detected!
                 if not self.is_speech_active[call_sid]:
@@ -229,18 +233,12 @@ class Phase3EventHandler:
                 self.silence_chunk_count[call_sid] = 0
                 self.audio_buffers[call_sid].extend(audio_bytes)
 
-                # Send to persistent WebSocket (non-blocking)
-                await self.stt_service.send_audio_chunk(call_sid, audio_bytes)
-
             else:
                 # Silence or low audio
                 if self.is_speech_active[call_sid]:
                     # We were speaking, now it's quiet - increment silence counter
                     self.silence_chunk_count[call_sid] += 1
                     self.audio_buffers[call_sid].extend(audio_bytes)  # Keep trailing silence
-
-                    # Send to persistent WebSocket (including trailing silence)
-                    await self.stt_service.send_audio_chunk(call_sid, audio_bytes)
 
                     # Check if silence period is long enough to end speech
                     if self.silence_chunk_count[call_sid] >= self.SILENCE_CHUNKS_REQUIRED:
@@ -261,7 +259,7 @@ class Phase3EventHandler:
                                     logger.info("=" * 80)
                                     logger.info(f"✅ PHASE 3: TRANSCRIPTION SUCCESSFUL!")
                                     logger.info(f"   📝 Customer said: '{transcription}'")
-                                    logger.info(f"   🔊 Audio size: {len(audio_to_transcribe)} bytes")
+                                    logger.info(f"   🔊 Audio buffer size: {len(self.audio_buffers[call_sid])} bytes")
                                     logger.info(f"   ⏱️  STT latency: {stt_latency_ms:.0f}ms ({stt_latency_ms/1000:.2f}s)")
                                     logger.info("=" * 80)
 
