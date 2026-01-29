@@ -513,7 +513,6 @@ class DeepgramSTTService:
             options = LiveOptions(
                 model="nova-3",  # ⚡ UPGRADED: Latest model, better Hinglish + faster
                 language="en-IN",  # Indian English (hardcoded for speed)
-                detect_language=False,  # ⚡ Disable detection for lower latency
                 interim_results=True,  # Enable real-time interim transcripts
                 endpointing=300,  # 300ms silence detection
                 smart_format=True,
