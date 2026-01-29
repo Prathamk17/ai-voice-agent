@@ -50,8 +50,8 @@ class LLMService:
         else:
             self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-        # Upgraded to gpt-4o for better conversation quality, nuanced understanding, and context retention
-        self.model = "gpt-4o"
+        # Using gpt-4o-mini for low-latency voice responses (~1s vs ~2.5s for gpt-4o)
+        self.model = "gpt-4o-mini"
 
     async def generate_streaming_response(
         self,
