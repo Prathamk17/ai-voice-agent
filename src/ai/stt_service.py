@@ -575,6 +575,38 @@ class DeepgramSTTService:
             if call_sid in self.active_streams:
                 del self.active_streams[call_sid]
 
+    async def send_audio_chunk(self, call_sid: str, audio_bytes: bytes):
+        """
+        Send audio chunk to persistent WebSocket connection.
+
+        This is the "walkie-talkie SEND" - stream audio continuously without
+        creating new connections.
+
+        Args:
+            call_sid: Call session ID
+            audio_bytes: Raw audio bytes (PCM 8kHz 16-bit mono)
+        """
+        if call_sid not in self.active_streams:
+            logger.warning(
+                "Cannot send audio - no persistent connection",
+                call_sid=call_sid
+            )
+            return
+
+        try:
+            stream_data = self.active_streams[call_sid]
+            dg_connection = stream_data['connection']
+
+            # Send audio chunk to Deepgram (non-blocking)
+            await asyncio.to_thread(dg_connection.send, audio_bytes)
+
+        except Exception as e:
+            logger.error(
+                "Failed to send audio chunk to persistent stream",
+                call_sid=call_sid,
+                error=str(e)
+            )
+
     async def stop_streaming(self, call_sid: str):
         """
         Stop persistent WebSocket streaming session.
