@@ -57,6 +57,11 @@ class ConversationSession(BaseModel):
     transcript_history: List[Dict[str, str]] = Field(default_factory=list)
     # Format: [{"speaker": "ai", "text": "...", "timestamp": "..."}, ...]
 
+    # Context Tracking (for better turn-taking and response understanding)
+    last_agent_question: Optional[str] = None  # Track the last question asked
+    last_agent_question_type: Optional[str] = None  # "purpose", "budget", "timeline", etc.
+    customer_mid_sentence: bool = False  # Flag if customer seems to be mid-thought
+
     # Collected Information during the call
     collected_data: Dict[str, Any] = Field(default_factory=dict)
     # e.g., {"purpose": "end_user", "budget_confirmed": 5000000, "timeline": "3_months"}

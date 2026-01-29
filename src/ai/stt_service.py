@@ -238,7 +238,11 @@ class DeepgramSTTService:
                 encoding="linear16",
                 sample_rate=8000,
                 channels=1,
-                interim_results=True
+                interim_results=True,
+                # Endpointing: Increase to prevent cutting off mid-sentence
+                # Default is 10ms - increasing to 1000ms (1 second) gives customer time to think
+                endpointing=1000,  # Wait 1s of silence before finalizing transcript
+                vad_events=True  # Get voice activity detection events
             )
 
             # Start connection
@@ -519,7 +523,11 @@ class DeepgramSTTService:
                 encoding="linear16",
                 sample_rate=8000,
                 channels=1,
-                interim_results=True
+                interim_results=True,
+                # Endpointing: Increase to prevent cutting off mid-sentence
+                # Default is 10ms - increasing to 1000ms (1 second) gives customer time to think
+                endpointing=1000,  # Wait 1s of silence before finalizing transcript
+                vad_events=True  # Get voice activity detection events
             )
 
             # Start persistent connection (handshake ONCE)
