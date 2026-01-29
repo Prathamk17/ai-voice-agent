@@ -246,16 +246,14 @@ class Phase3EventHandler:
                     if self.silence_chunk_count[call_sid] >= self.SILENCE_CHUNKS_REQUIRED:
                         logger.info(f"🔇 PHASE 3: SPEECH ENDED (silence for {self.silence_chunk_count[call_sid]} chunks)")
 
-                        # Transcribe the buffered audio
+                        # Get transcript from persistent WebSocket connection
                         if len(self.audio_buffers[call_sid]) > 3200:  # At least 0.2 seconds (reduced to capture short responses)
-                            audio_to_transcribe = bytes(self.audio_buffers[call_sid])
-
-                            logger.info(f"🎤 PHASE 3: Transcribing {len(audio_to_transcribe)} bytes...")
+                            logger.info(f"🎤 PHASE 3: Retrieving transcript from persistent WebSocket...")
 
                             try:
-                                # Step 1: Transcribe with Deepgram
+                                # Step 1: Get transcript from persistent connection (low latency!)
                                 t_stt_start = time.time()
-                                transcription = await self.stt_service.transcribe_audio(audio_to_transcribe, call_sid)
+                                transcription = self.stt_service.get_transcript(call_sid)
                                 t_stt_end = time.time()
                                 stt_latency_ms = (t_stt_end - t_stt_start) * 1000
 
