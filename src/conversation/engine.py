@@ -4,7 +4,7 @@ Conversation engine - main orchestration logic.
 Handles conversation flow, state management, and decision making.
 """
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 
 from src.models.conversation import ConversationSession, ConversationStage
 # REMOVED: Playbook-based components (no longer used)
